@@ -34,27 +34,27 @@ import {
   toLocalDateTimeInput,
   toSafeIso,
 } from './utils/pricing';
-import { isSupabaseConfigured, supabase } from './lib/supabase';
 import {
-  addStationInDb,
-  addVehicleInDb,
-  addVehicleTypeInDb,
-  adminSetReservationStatusInDb,
-  cancelReservationInDb,
-  createReservationInDb,
-  deleteProfileInDb,
-  deleteReservationInDb,
-  deleteStationInDb,
-  deleteVehicleInDb,
-  deleteVehicleTypeInDb,
+  addStationInApi,
+  addVehicleInApi,
+  addVehicleTypeInApi,
+  adminSetReservationStatusInApi,
+  cancelReservationInApi,
+  createReservationInApi,
+  createUserInApi,
+  deleteReservationInApi,
+  deleteStationInApi,
+  deleteUserInApi,
+  deleteVehicleInApi,
+  deleteVehicleTypeInApi,
   fetchBootstrapData,
-  pickUpReservationInDb,
-  returnReservationInDb,
-  signOutFromSupabase,
-  signUpWithSupabase,
-  toggleProfileActiveInDb,
-  updateProfileRoleInDb,
-  updateVehicleInDb,
+  isApiConfigured,
+  logoutFromApi,
+  pickUpReservationInApi,
+  returnReservationInApi,
+  updateUserActiveInApi,
+  updateUserRoleInApi,
+  updateVehicleInApi,
 } from './services/rydioApi';
 
 function loadState<T>(key: string, fallback: T): T {
@@ -69,7 +69,7 @@ function loadState<T>(key: string, fallback: T): T {
 
 export function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('home');
-  const [supabaseLive, setSupabaseLive] = useState(false);
+  const [apiLive, setApiLive] = useState(false);
 
   const [users, setUsers] = useState<UserAccount[]>(() =>
     loadState('rydio_users_v1', INITIAL_USERS)
@@ -77,7 +77,7 @@ export function App() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(() =>
     loadState<string | null>('rydio_session_uid_v1', null)
   );
-  const [supabaseCurrentUser, setSupabaseCurrentUser] = useState<UserAccount | null>(null);
+  const [apiCurrentUser, setApiCurrentUser] = useState<UserAccount | null>(null);
 
   const [stations, setStations] = useState<Station[]>(() =>
     loadState('rydio_stations_v1', INITIAL_STATIONS)
@@ -127,8 +127,8 @@ export function App() {
     }, 3600);
   }, []);
 
-  const syncFromSupabase = useCallback(async () => {
-    if (!isSupabaseConfigured) return;
+  const syncFromApi = useCallback(async () => {
+    if (!isApiConfigured) return;
     try {
       const data = await fetchBootstrapData();
       if (!data) return;
@@ -137,42 +137,33 @@ export function App() {
       setVehicles(data.vehicles);
       setReservations(data.reservations);
       setBusyWindows(data.busyWindows);
-      setSupabaseCurrentUser(data.currentUser);
+      setApiCurrentUser(data.currentUser);
       if (data.users.length > 0) setUsers(data.users);
       if (data.monthlyRevenue.length > 0) setMonthlyRevenue(data.monthlyRevenue);
-      setSupabaseLive(true);
+      setApiLive(true);
     } catch {
-      // Keep local seed fallback if migration has not yet been applied
-      setSupabaseLive(false);
+      setApiLive(false);
     }
   }, []);
 
   useEffect(() => {
-    void syncFromSupabase();
-    if (!supabase) return;
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      void syncFromSupabase();
-    });
-    return () => {
-      sub.subscription.unsubscribe();
-    };
-  }, [syncFromSupabase]);
+    void syncFromApi();
+  }, [syncFromApi]);
 
   const currentUser = useMemo(() => {
-    if (supabaseLive) return supabaseCurrentUser;
+    if (apiLive) return apiCurrentUser;
     return users.find((u) => u.id === currentUserId && u.active) ?? null;
-  }, [supabaseLive, supabaseCurrentUser, users, currentUserId]);
+  }, [apiLive, apiCurrentUser, users, currentUserId]);
 
-  // Persist local fallback state only when not running live on Supabase
   useEffect(() => {
-    if (supabaseLive) return;
+    if (apiLive) return;
     window.localStorage.setItem('rydio_users_v1', JSON.stringify(users));
     window.localStorage.setItem('rydio_session_uid_v1', JSON.stringify(currentUserId));
     window.localStorage.setItem('rydio_stations_v1', JSON.stringify(stations));
     window.localStorage.setItem('rydio_types_v1', JSON.stringify(vehicleTypes));
     window.localStorage.setItem('rydio_vehicles_v1', JSON.stringify(vehicles));
     window.localStorage.setItem('rydio_reservations_v1', JSON.stringify(reservations));
-  }, [supabaseLive, users, currentUserId, stations, vehicleTypes, vehicles, reservations]);
+  }, [apiLive, users, currentUserId, stations, vehicleTypes, vehicles, reservations]);
 
   useEffect(() => {
     return () => {
@@ -180,9 +171,8 @@ export function App() {
     };
   }, []);
 
-  // Combined reservations used for public availability checks (respects busyWindows in Supabase mode)
   const availabilityReservations = useMemo<Reservation[]>(() => {
-    if (!supabaseLive) return reservations;
+    if (!apiLive) return reservations;
     return busyWindows.map((b, idx) => ({
       id: `busy-${idx}`,
       vehicleId: b.vehicleId,
@@ -198,12 +188,13 @@ export function App() {
       totalPriceMkd: 0,
       createdAt: b.startTime,
     }));
-  }, [supabaseLive, reservations, busyWindows]);
+  }, [apiLive, reservations, busyWindows]);
 
-  const handleSupabaseAuthSuccess = async () => {
-    await syncFromSupabase();
+  const handleApiAuthSuccess = async (user: UserAccount) => {
+    setApiCurrentUser(user);
+    await syncFromApi();
     setAuthModalMode(null);
-    showToast('Signed in to Rydio.');
+    showToast(`Signed in as ${user.name} (${user.role}).`);
   };
 
   const handleLocalLoginSuccess = (user: UserAccount) => {
@@ -220,10 +211,10 @@ export function App() {
   };
 
   const handleLogout = async () => {
-    if (supabaseLive) {
-      await signOutFromSupabase();
-      setSupabaseCurrentUser(null);
-      await syncFromSupabase();
+    if (apiLive) {
+      logoutFromApi();
+      setApiCurrentUser(null);
+      await syncFromApi();
     } else {
       setCurrentUserId(null);
     }
@@ -293,27 +284,17 @@ export function App() {
     const vehicle = vehicles.find((v) => v.id === payload.vehicleId);
     if (!vehicle) return;
 
-    const bookingId = `RES-${Math.floor(1050 + Math.random() * 8900)}`;
-
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await createReservationInDb({
-          id: bookingId,
+        const created = await createReservationInApi({
           vehicleId: vehicle.id,
-          userId: currentUser.id,
-          customerName: currentUser.name,
-          customerEmail: currentUser.email,
-          pickupStationId: vehicle.stationId,
           startTime: payload.startTime,
           endTime: payload.endTime,
-          basePriceMkd: payload.basePriceMkd,
-          discountAppliedMkd: payload.discountAppliedMkd,
-          totalPriceMkd: payload.totalPriceMkd,
         });
-        await syncFromSupabase();
+        await syncFromApi();
         setBookingVehicle(null);
         setActiveTab('my-rides');
-        showToast(`Reserved ${vehicle.name} (${bookingId}).`);
+        showToast(`Reserved ${vehicle.name} (${created.id}).`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not create reservation.');
       }
@@ -321,7 +302,7 @@ export function App() {
     }
 
     const newRes: Reservation = {
-      id: bookingId,
+      id: `RES-${Math.floor(1050 + Math.random() * 8900)}`,
       vehicleId: vehicle.id,
       customerName: currentUser.name,
       customerEmail: currentUser.email,
@@ -343,10 +324,10 @@ export function App() {
   };
 
   const handlePickUp = async (reservationId: string) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await pickUpReservationInDb(reservationId);
-        await syncFromSupabase();
+        await pickUpReservationInApi(reservationId);
+        await syncFromApi();
         showToast(`Vehicle picked up — reservation ${reservationId} is now Active.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Pickup failed.');
@@ -366,14 +347,14 @@ export function App() {
     latePenaltyMkd: number;
   }) => {
     const stationName = stations.find((s) => s.id === payload.returnStationId)?.name ?? 'station';
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await returnReservationInDb({
+        await returnReservationInApi({
           reservationId: payload.reservationId,
           returnStationId: payload.returnStationId,
           actualReturnTime: payload.actualReturnTime,
         });
-        await syncFromSupabase();
+        await syncFromApi();
         showToast(`Vehicle docked at ${stationName}.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Return failed.');
@@ -406,10 +387,10 @@ export function App() {
   };
 
   const handleCancelReservation = async (reservationId: string) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await cancelReservationInDb(reservationId);
-        await syncFromSupabase();
+        await cancelReservationInApi(reservationId);
+        await syncFromApi();
         showToast(`Reservation ${reservationId} cancelled.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Cancellation failed.');
@@ -426,10 +407,10 @@ export function App() {
   const handleToggleMaintenance = async (vehicleId: string) => {
     const target = vehicles.find((v) => v.id === vehicleId);
     if (!target) return;
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await updateVehicleInDb(vehicleId, { inMaintenance: !target.inMaintenance });
-        await syncFromSupabase();
+        await updateVehicleInApi(vehicleId, { inMaintenance: !target.inMaintenance });
+        await syncFromApi();
         showToast(
           target.inMaintenance
             ? `${target.name} restored to public catalog.`
@@ -451,26 +432,26 @@ export function App() {
   };
 
   const handleAddVehicle = async (veh: Omit<Vehicle, 'id'>) => {
-    const created: Vehicle = { ...veh, id: `veh-${Date.now()}` };
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await addVehicleInDb(created);
-        await syncFromSupabase();
-        showToast(`Added ${created.name} to fleet.`);
+        await addVehicleInApi(veh);
+        await syncFromApi();
+        showToast(`Added ${veh.name} to fleet.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not add vehicle.');
       }
       return;
     }
+    const created: Vehicle = { ...veh, id: `veh-${Date.now()}` };
     setVehicles((prev) => [created, ...prev]);
     showToast(`Added ${created.name} to fleet.`);
   };
 
   const handleUpdateVehicle = async (vehicleId: string, patch: Partial<Vehicle>) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await updateVehicleInDb(vehicleId, patch);
-        await syncFromSupabase();
+        await updateVehicleInApi(vehicleId, patch);
+        await syncFromApi();
         showToast('Vehicle details updated.');
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Update failed.');
@@ -483,10 +464,10 @@ export function App() {
 
   const handleDeleteVehicle = async (vehicleId: string) => {
     const target = vehicles.find((v) => v.id === vehicleId);
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await deleteVehicleInDb(vehicleId);
-        await syncFromSupabase();
+        await deleteVehicleInApi(vehicleId);
+        await syncFromApi();
         showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Delete failed.');
@@ -498,19 +479,18 @@ export function App() {
   };
 
   const handleAddType = async (vt: Omit<VehicleType, 'id'>) => {
-    const created: VehicleType = { ...vt, id: `vt-${Date.now()}` };
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await addVehicleTypeInDb(created);
-        await syncFromSupabase();
-        showToast(`Added vehicle type "${created.name}".`);
+        await addVehicleTypeInApi(vt);
+        await syncFromApi();
+        showToast(`Added vehicle type "${vt.name}".`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not add type.');
       }
       return;
     }
-    setVehicleTypes((prev) => [...prev, created]);
-    showToast(`Added vehicle type "${created.name}".`);
+    setVehicleTypes((prev) => [...prev, { ...vt, id: `vt-${Date.now()}` }]);
+    showToast(`Added vehicle type "${vt.name}".`);
   };
 
   const handleDeleteType = async (typeId: string) => {
@@ -519,10 +499,10 @@ export function App() {
       showToast('Cannot delete type while vehicles are still assigned to it.');
       return;
     }
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await deleteVehicleTypeInDb(typeId);
-        await syncFromSupabase();
+        await deleteVehicleTypeInApi(typeId);
+        await syncFromApi();
         showToast('Vehicle type deleted.');
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Delete failed.');
@@ -534,19 +514,18 @@ export function App() {
   };
 
   const handleAddStation = async (st: Omit<Station, 'id'>) => {
-    const created: Station = { ...st, id: `st-${Date.now()}` };
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await addStationInDb(created);
-        await syncFromSupabase();
-        showToast(`Added station "${created.name}".`);
+        await addStationInApi(st);
+        await syncFromApi();
+        showToast(`Added station "${st.name}".`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not add station.');
       }
       return;
     }
-    setStations((prev) => [...prev, created]);
-    showToast(`Added station "${created.name}".`);
+    setStations((prev) => [...prev, { ...st, id: `st-${Date.now()}` }]);
+    showToast(`Added station "${st.name}".`);
   };
 
   const handleDeleteStation = async (stationId: string) => {
@@ -555,10 +534,10 @@ export function App() {
       showToast('Move docked vehicles to another station before deleting this station.');
       return;
     }
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await deleteStationInDb(stationId);
-        await syncFromSupabase();
+        await deleteStationInApi(stationId);
+        await syncFromApi();
         showToast('Station deleted.');
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Delete failed.');
@@ -573,10 +552,10 @@ export function App() {
     reservationId: string,
     status: ReservationStatus
   ) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await adminSetReservationStatusInDb(reservationId, status);
-        await syncFromSupabase();
+        await adminSetReservationStatusInApi(reservationId, status);
+        await syncFromApi();
         showToast(`Reservation ${reservationId} marked ${status}.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Status update failed.');
@@ -590,10 +569,10 @@ export function App() {
   };
 
   const handleDeleteReservation = async (reservationId: string) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await deleteReservationInDb(reservationId);
-        await syncFromSupabase();
+        await deleteReservationInApi(reservationId);
+        await syncFromApi();
         showToast(`Reservation ${reservationId} removed.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Delete failed.');
@@ -605,11 +584,11 @@ export function App() {
   };
 
   const handleCreateUser = async (user: Omit<UserAccount, 'id' | 'createdAt'>) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await signUpWithSupabase(user.name, user.email, user.password);
-        await syncFromSupabase();
-        showToast(`Created account for ${user.name}.`);
+        await createUserInApi(user);
+        await syncFromApi();
+        showToast(`Created ${user.role} account for ${user.name}.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not create user.');
       }
@@ -625,10 +604,10 @@ export function App() {
   };
 
   const handleUpdateUserRole = async (userId: string, nextRole: AccountRole) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await updateProfileRoleInDb(userId, nextRole);
-        await syncFromSupabase();
+        await updateUserRoleInApi(userId, nextRole);
+        await syncFromApi();
         showToast(`Updated user role to ${nextRole}.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Role update failed.');
@@ -642,10 +621,10 @@ export function App() {
   const handleToggleUserActive = async (userId: string) => {
     const target = users.find((u) => u.id === userId);
     if (!target) return;
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await toggleProfileActiveInDb(userId, !target.active);
-        await syncFromSupabase();
+        await updateUserActiveInApi(userId, !target.active);
+        await syncFromApi();
         showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Update failed.');
@@ -657,11 +636,11 @@ export function App() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (supabaseLive) {
+    if (apiLive) {
       try {
-        await deleteProfileInDb(userId);
-        await syncFromSupabase();
-        showToast('User profile deleted.');
+        await deleteUserInApi(userId);
+        await syncFromApi();
+        showToast('User account deleted.');
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Delete failed.');
       }
@@ -672,9 +651,9 @@ export function App() {
   };
 
   const handleResetSystemData = () => {
-    if (supabaseLive) {
-      void syncFromSupabase();
-      showToast('Synced latest state from Supabase PostgreSQL.');
+    if (apiLive) {
+      void syncFromApi();
+      showToast('Synced latest state from .NET 10 PostgreSQL API.');
       return;
     }
     setStations(INITIAL_STATIONS);
@@ -810,9 +789,9 @@ export function App() {
       {authModalMode && (
         <AuthModal
           initialMode={authModalMode}
-          useSupabaseAuth={supabaseLive}
+          useRemoteApi={apiLive}
           users={users}
-          onSupabaseAuthSuccess={handleSupabaseAuthSuccess}
+          onApiAuthSuccess={handleApiAuthSuccess}
           onLocalLoginSuccess={handleLocalLoginSuccess}
           onLocalRegisterSuccess={handleLocalRegisterSuccess}
           onClose={() => setAuthModalMode(null)}

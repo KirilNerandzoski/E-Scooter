@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { X, AlertCircle, ShieldCheck, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { X, AlertCircle, ShieldCheck, ArrowRight } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
 import { Modal } from './Modal';
-import { signInWithSupabase, signUpWithSupabase } from '../services/rydioApi';
+import { loginWithApi, registerWithApi } from '../services/rydioApi';
 
 interface AuthModalProps {
   initialMode?: 'login' | 'register';
-  useSupabaseAuth: boolean;
+  useRemoteApi: boolean;
   users: UserAccount[];
-  onSupabaseAuthSuccess: () => Promise<void>;
+  onApiAuthSuccess: (user: UserAccount) => Promise<void>;
   onLocalLoginSuccess: (user: UserAccount) => void;
   onLocalRegisterSuccess: (newUser: UserAccount) => void;
   onClose: () => void;
@@ -16,9 +16,9 @@ interface AuthModalProps {
 
 export function AuthModal({
   initialMode = 'login',
-  useSupabaseAuth,
+  useRemoteApi,
   users,
-  onSupabaseAuthSuccess,
+  onApiAuthSuccess,
   onLocalLoginSuccess,
   onLocalRegisterSuccess,
   onClose,
@@ -29,13 +29,11 @@ export function AuthModal({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setInfoMessage(null);
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -58,23 +56,14 @@ export function AuthModal({
       }
     }
 
-    if (useSupabaseAuth) {
+    if (useRemoteApi) {
       setSubmitting(true);
       try {
-        if (mode === 'login') {
-          await signInWithSupabase(normalizedEmail, password);
-          await onSupabaseAuthSuccess();
-        } else {
-          const res = await signUpWithSupabase(name.trim(), normalizedEmail, password);
-          if (res.needsEmailConfirm) {
-            setInfoMessage(
-              'Account created! Check your email to confirm your address, then sign in.'
-            );
-            setMode('login');
-          } else {
-            await onSupabaseAuthSuccess();
-          }
-        }
+        const user =
+          mode === 'login'
+            ? await loginWithApi(normalizedEmail, password)
+            : await registerWithApi(name.trim(), normalizedEmail, password);
+        await onApiAuthSuccess(user);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Authentication failed.');
       } finally {
@@ -83,7 +72,7 @@ export function AuthModal({
       return;
     }
 
-    // Local fallback mode (when Supabase tables are not yet deployed)
+    // Local fallback mode
     if (mode === 'login') {
       const account = users.find((u) => u.email.toLowerCase() === normalizedEmail);
       if (!account || account.password !== password) {
@@ -198,16 +187,6 @@ export function AuthModal({
           </div>
         )}
 
-        {infoMessage && (
-          <div
-            role="status"
-            className="flex items-start gap-2 rounded-md border border-[#0A1A33]/25 bg-white px-3.5 py-2.5 text-xs text-[#0A1A33]"
-          >
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{infoMessage}</span>
-          </div>
-        )}
-
         {mode === 'register' && (
           <div>
             <label
@@ -299,26 +278,22 @@ export function AuthModal({
 
         <details className="border-t border-[#DDE2E8] pt-3 text-[11px] text-[#515F73]">
           <summary className="cursor-pointer font-medium tracking-[0.08em] text-[#515F73] hover:text-[#0A1A33]">
-            SuperAdmin setup info
+            Evaluation access (SuperAdmin)
           </summary>
           <div className="mt-2.5 flex items-center justify-between gap-2 rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2.5">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#0A1A33]" />
               <span>
-                Register with <strong className="text-[#0A1A33]">superadmin@rydio.mk</strong> or{' '}
-                <strong className="text-[#0A1A33]">kiril.nerandz99@gmail.com</strong> for automatic
-                SuperAdmin access.
+                <strong className="text-[#0A1A33]">superadmin@rydio.mk</strong>
               </span>
             </div>
-            {!useSupabaseAuth && (
-              <button
-                type="button"
-                onClick={fillSuperAdmin}
-                className="shrink-0 rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
-              >
-                FILL
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={fillSuperAdmin}
+              className="shrink-0 rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
+            >
+              FILL
+            </button>
           </div>
         </details>
       </form>

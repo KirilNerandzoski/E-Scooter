@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Supabase (PostgreSQL, Auth, Row-Level Security, RPC functions) backend with a React (Vite + TypeScript + Tailwind CSS) frontend.
+.NET 10 Web API (ASP.NET Core + EF Core + Npgsql PostgreSQL) hosted on Render, with a React (Vite + TypeScript + Tailwind CSS) frontend hosted on GitHub Pages.
 
 ## Users
 
