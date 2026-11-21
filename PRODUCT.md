@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-.NET 10 MVC + PostgreSQL backend with a React frontend.
+Supabase (PostgreSQL, Auth, Row-Level Security, RPC functions) backend with a React (Vite + TypeScript + Tailwind CSS) frontend.
 
 ## Users
 

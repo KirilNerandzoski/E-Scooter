@@ -1,21 +1,26 @@
 import { useState } from 'react';
-import { X, AlertCircle, ShieldCheck, ArrowRight } from 'lucide-react';
+import { X, AlertCircle, ShieldCheck, ArrowRight, CheckCircle2 } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
 import { Modal } from './Modal';
+import { signInWithSupabase, signUpWithSupabase } from '../services/rydioApi';
 
 interface AuthModalProps {
   initialMode?: 'login' | 'register';
+  useSupabaseAuth: boolean;
   users: UserAccount[];
-  onLoginSuccess: (user: UserAccount) => void;
-  onRegisterSuccess: (newUser: UserAccount) => void;
+  onSupabaseAuthSuccess: () => Promise<void>;
+  onLocalLoginSuccess: (user: UserAccount) => void;
+  onLocalRegisterSuccess: (newUser: UserAccount) => void;
   onClose: () => void;
 }
 
 export function AuthModal({
   initialMode = 'login',
+  useSupabaseAuth,
   users,
-  onLoginSuccess,
-  onRegisterSuccess,
+  onSupabaseAuthSuccess,
+  onLocalLoginSuccess,
+  onLocalRegisterSuccess,
   onClose,
 }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
@@ -24,13 +29,61 @@ export function AuthModal({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfoMessage(null);
 
     const normalizedEmail = email.trim().toLowerCase();
 
+    if (mode === 'register') {
+      if (name.trim().length < 2) {
+        setError('Please enter your full name.');
+        return;
+      }
+      if (!normalizedEmail.includes('@')) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+    }
+
+    if (useSupabaseAuth) {
+      setSubmitting(true);
+      try {
+        if (mode === 'login') {
+          await signInWithSupabase(normalizedEmail, password);
+          await onSupabaseAuthSuccess();
+        } else {
+          const res = await signUpWithSupabase(name.trim(), normalizedEmail, password);
+          if (res.needsEmailConfirm) {
+            setInfoMessage(
+              'Account created! Check your email to confirm your address, then sign in.'
+            );
+            setMode('login');
+          } else {
+            await onSupabaseAuthSuccess();
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Authentication failed.');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Local fallback mode (when Supabase tables are not yet deployed)
     if (mode === 'login') {
       const account = users.find((u) => u.email.toLowerCase() === normalizedEmail);
       if (!account || account.password !== password) {
@@ -41,26 +94,10 @@ export function AuthModal({
         setError('This account has been suspended by an administrator.');
         return;
       }
-      onLoginSuccess(account);
+      onLocalLoginSuccess(account);
       return;
     }
 
-    if (name.trim().length < 2) {
-      setError('Please enter your full name.');
-      return;
-    }
-    if (!normalizedEmail.includes('@')) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
     if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
       setError('An account with this email already exists. Sign in instead.');
       return;
@@ -71,11 +108,14 @@ export function AuthModal({
       name: name.trim(),
       email: normalizedEmail,
       password,
-      role: 'Customer',
+      role:
+        normalizedEmail === 'superadmin@rydio.mk' || normalizedEmail === 'kiril.nerandz99@gmail.com'
+          ? 'SuperAdmin'
+          : 'Customer',
       active: true,
       createdAt: new Date().toISOString(),
     };
-    onRegisterSuccess(newUser);
+    onLocalRegisterSuccess(newUser);
   };
 
   const fillSuperAdmin = () => {
@@ -87,7 +127,6 @@ export function AuthModal({
 
   return (
     <Modal labelledBy="auth-modal-title" maxWidthClass="max-w-md" onClose={onClose}>
-      {/* Header */}
       <div className="flex items-start justify-between rounded-t-lg border-b border-[#DDE2E8] bg-white px-6 py-5">
         <div>
           <h2 id="auth-modal-title" className="font-display text-2xl font-normal text-[#0A1A33]">
@@ -109,8 +148,11 @@ export function AuthModal({
         </button>
       </div>
 
-      {/* Mode Tabs */}
-      <div role="tablist" aria-label="Authentication mode" className="grid grid-cols-2 border-b border-[#DDE2E8] bg-white px-6">
+      <div
+        role="tablist"
+        aria-label="Authentication mode"
+        className="grid grid-cols-2 border-b border-[#DDE2E8] bg-white px-6"
+      >
         <button
           type="button"
           role="tab"
@@ -153,6 +195,16 @@ export function AuthModal({
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {infoMessage && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-md border border-[#0A1A33]/25 bg-white px-3.5 py-2.5 text-xs text-[#0A1A33]"
+          >
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{infoMessage}</span>
           </div>
         )}
 
@@ -234,31 +286,39 @@ export function AuthModal({
 
         <button
           type="submit"
-          className="inline-flex w-full items-center justify-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-[#1E2D4A]"
+          disabled={submitting}
+          className="inline-flex w-full items-center justify-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-50"
         >
-          {mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}
+          {submitting
+            ? 'PLEASE WAIT...'
+            : mode === 'login'
+              ? 'SIGN IN'
+              : 'CREATE ACCOUNT'}
           <ArrowRight className="h-3.5 w-3.5" />
         </button>
 
-        {/* Discreet demo SuperAdmin quick-fill */}
         <details className="border-t border-[#DDE2E8] pt-3 text-[11px] text-[#515F73]">
           <summary className="cursor-pointer font-medium tracking-[0.08em] text-[#515F73] hover:text-[#0A1A33]">
-            Evaluation access (SuperAdmin)
+            SuperAdmin setup info
           </summary>
-          <div className="mt-2.5 flex items-center justify-between rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2.5">
+          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2.5">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-[#0A1A33]" />
+              <ShieldCheck className="h-4 w-4 shrink-0 text-[#0A1A33]" />
               <span>
-                <strong className="text-[#0A1A33]">superadmin@rydio.mk</strong>
+                Register with <strong className="text-[#0A1A33]">superadmin@rydio.mk</strong> or{' '}
+                <strong className="text-[#0A1A33]">kiril.nerandz99@gmail.com</strong> for automatic
+                SuperAdmin access.
               </span>
             </div>
-            <button
-              type="button"
-              onClick={fillSuperAdmin}
-              className="rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
-            >
-              FILL
-            </button>
+            {!useSupabaseAuth && (
+              <button
+                type="button"
+                onClick={fillSuperAdmin}
+                className="shrink-0 rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
+              >
+                FILL
+              </button>
+            )}
           </div>
         </details>
       </form>

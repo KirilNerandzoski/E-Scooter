@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { LeftRail, type NavTab } from './components/LeftRail';
 import { RightTelemetry } from './components/RightTelemetry';
@@ -20,6 +20,7 @@ import {
 } from './data/seedData';
 import type {
   AccountRole,
+  MonthlyRevenuePoint,
   Reservation,
   ReservationStatus,
   Station,
@@ -33,6 +34,28 @@ import {
   toLocalDateTimeInput,
   toSafeIso,
 } from './utils/pricing';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
+import {
+  addStationInDb,
+  addVehicleInDb,
+  addVehicleTypeInDb,
+  adminSetReservationStatusInDb,
+  cancelReservationInDb,
+  createReservationInDb,
+  deleteProfileInDb,
+  deleteReservationInDb,
+  deleteStationInDb,
+  deleteVehicleInDb,
+  deleteVehicleTypeInDb,
+  fetchBootstrapData,
+  pickUpReservationInDb,
+  returnReservationInDb,
+  signOutFromSupabase,
+  signUpWithSupabase,
+  toggleProfileActiveInDb,
+  updateProfileRoleInDb,
+  updateVehicleInDb,
+} from './services/rydioApi';
 
 function loadState<T>(key: string, fallback: T): T {
   try {
@@ -46,6 +69,7 @@ function loadState<T>(key: string, fallback: T): T {
 
 export function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('home');
+  const [supabaseLive, setSupabaseLive] = useState(false);
 
   const [users, setUsers] = useState<UserAccount[]>(() =>
     loadState('rydio_users_v1', INITIAL_USERS)
@@ -53,6 +77,7 @@ export function App() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(() =>
     loadState<string | null>('rydio_session_uid_v1', null)
   );
+  const [supabaseCurrentUser, setSupabaseCurrentUser] = useState<UserAccount | null>(null);
 
   const [stations, setStations] = useState<Station[]>(() =>
     loadState('rydio_stations_v1', INITIAL_STATIONS)
@@ -65,6 +90,12 @@ export function App() {
   );
   const [reservations, setReservations] = useState<Reservation[]>(() =>
     loadState('rydio_reservations_v1', INITIAL_RESERVATIONS)
+  );
+  const [busyWindows, setBusyWindows] = useState<
+    { vehicleId: string; startTime: string; endTime: string; status: ReservationStatus }[]
+  >([]);
+  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenuePoint[]>(
+    HISTORICAL_MONTHLY_REVENUE
   );
 
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | null>(null);
@@ -87,34 +118,61 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
-  const currentUser = useMemo(
-    () => users.find((u) => u.id === currentUserId && u.active) ?? null,
-    [users, currentUserId]
-  );
+  const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setToast(msg);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3600);
+  }, []);
+
+  const syncFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    try {
+      const data = await fetchBootstrapData();
+      if (!data) return;
+      setStations(data.stations);
+      setVehicleTypes(data.vehicleTypes);
+      setVehicles(data.vehicles);
+      setReservations(data.reservations);
+      setBusyWindows(data.busyWindows);
+      setSupabaseCurrentUser(data.currentUser);
+      if (data.users.length > 0) setUsers(data.users);
+      if (data.monthlyRevenue.length > 0) setMonthlyRevenue(data.monthlyRevenue);
+      setSupabaseLive(true);
+    } catch {
+      // Keep local seed fallback if migration has not yet been applied
+      setSupabaseLive(false);
+    }
+  }, []);
 
   useEffect(() => {
+    void syncFromSupabase();
+    if (!supabase) return;
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      void syncFromSupabase();
+    });
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+  }, [syncFromSupabase]);
+
+  const currentUser = useMemo(() => {
+    if (supabaseLive) return supabaseCurrentUser;
+    return users.find((u) => u.id === currentUserId && u.active) ?? null;
+  }, [supabaseLive, supabaseCurrentUser, users, currentUserId]);
+
+  // Persist local fallback state only when not running live on Supabase
+  useEffect(() => {
+    if (supabaseLive) return;
     window.localStorage.setItem('rydio_users_v1', JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
     window.localStorage.setItem('rydio_session_uid_v1', JSON.stringify(currentUserId));
-  }, [currentUserId]);
-
-  useEffect(() => {
     window.localStorage.setItem('rydio_stations_v1', JSON.stringify(stations));
-  }, [stations]);
-
-  useEffect(() => {
     window.localStorage.setItem('rydio_types_v1', JSON.stringify(vehicleTypes));
-  }, [vehicleTypes]);
-
-  useEffect(() => {
     window.localStorage.setItem('rydio_vehicles_v1', JSON.stringify(vehicles));
-  }, [vehicles]);
-
-  useEffect(() => {
     window.localStorage.setItem('rydio_reservations_v1', JSON.stringify(reservations));
-  }, [reservations]);
+  }, [supabaseLive, users, currentUserId, stations, vehicleTypes, vehicles, reservations]);
 
   useEffect(() => {
     return () => {
@@ -122,30 +180,53 @@ export function App() {
     };
   }, []);
 
-  const showToast = (msg: string) => {
-    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    setToast(msg);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToast(null);
-      toastTimerRef.current = null;
-    }, 3600);
+  // Combined reservations used for public availability checks (respects busyWindows in Supabase mode)
+  const availabilityReservations = useMemo<Reservation[]>(() => {
+    if (!supabaseLive) return reservations;
+    return busyWindows.map((b, idx) => ({
+      id: `busy-${idx}`,
+      vehicleId: b.vehicleId,
+      customerName: '',
+      customerEmail: '',
+      pickupStationId: '',
+      startTime: b.startTime,
+      endTime: b.endTime,
+      status: b.status,
+      basePriceMkd: 0,
+      discountAppliedMkd: 0,
+      latePenaltyMkd: 0,
+      totalPriceMkd: 0,
+      createdAt: b.startTime,
+    }));
+  }, [supabaseLive, reservations, busyWindows]);
+
+  const handleSupabaseAuthSuccess = async () => {
+    await syncFromSupabase();
+    setAuthModalMode(null);
+    showToast('Signed in to Rydio.');
   };
 
-  const handleLoginSuccess = (user: UserAccount) => {
+  const handleLocalLoginSuccess = (user: UserAccount) => {
     setCurrentUserId(user.id);
     setAuthModalMode(null);
     showToast(`Signed in as ${user.name} (${user.role}).`);
   };
 
-  const handleRegisterSuccess = (newUser: UserAccount) => {
+  const handleLocalRegisterSuccess = (newUser: UserAccount) => {
     setUsers((prev) => [...prev, newUser]);
     setCurrentUserId(newUser.id);
     setAuthModalMode(null);
     showToast(`Welcome to Rydio, ${newUser.name}!`);
   };
 
-  const handleLogout = () => {
-    setCurrentUserId(null);
+  const handleLogout = async () => {
+    if (supabaseLive) {
+      await signOutFromSupabase();
+      setSupabaseCurrentUser(null);
+      await syncFromSupabase();
+    } else {
+      setCurrentUserId(null);
+    }
     if (activeTab === 'admin') setActiveTab('home');
     showToast('Signed out.');
   };
@@ -153,8 +234,10 @@ export function App() {
   const freeNowCount = useMemo(() => {
     const nowIso = new Date().toISOString();
     const soonIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    return vehicles.filter((v) => isVehicleAvailable(v, reservations, nowIso, soonIso)).length;
-  }, [vehicles, reservations]);
+    return vehicles.filter((v) =>
+      isVehicleAvailable(v, availabilityReservations, nowIso, soonIso)
+    ).length;
+  }, [vehicles, availabilityReservations]);
 
   const windowFreeCount = useMemo(() => {
     const startIso = toSafeIso(filterStart);
@@ -163,9 +246,16 @@ export function App() {
       if (v.inMaintenance) return false;
       if (filterTypeId && v.typeId !== filterTypeId) return false;
       if (filterStationId && v.stationId !== filterStationId) return false;
-      return isVehicleAvailable(v, reservations, startIso, endIso);
+      return isVehicleAvailable(v, availabilityReservations, startIso, endIso);
     }).length;
-  }, [vehicles, reservations, filterTypeId, filterStationId, filterStart, filterEnd]);
+  }, [
+    vehicles,
+    availabilityReservations,
+    filterTypeId,
+    filterStationId,
+    filterStart,
+    filterEnd,
+  ]);
 
   const windowDurationLabel = useMemo(
     () => formatWindowDuration(filterStart, filterEnd),
@@ -178,8 +268,8 @@ export function App() {
   }, [filterStationId, stations]);
 
   const activeRidesCount = useMemo(
-    () => reservations.filter((r) => r.status === 'Active').length,
-    [reservations]
+    () => availabilityReservations.filter((r) => r.status === 'Active').length,
+    [availabilityReservations]
   );
 
   const myActiveCount = useMemo(() => {
@@ -191,7 +281,7 @@ export function App() {
     ).length;
   }, [reservations, currentUser]);
 
-  const handleConfirmReservation = (payload: {
+  const handleConfirmReservation = async (payload: {
     vehicleId: string;
     startTime: string;
     endTime: string;
@@ -203,8 +293,35 @@ export function App() {
     const vehicle = vehicles.find((v) => v.id === payload.vehicleId);
     if (!vehicle) return;
 
+    const bookingId = `RES-${Math.floor(1050 + Math.random() * 8900)}`;
+
+    if (supabaseLive) {
+      try {
+        await createReservationInDb({
+          id: bookingId,
+          vehicleId: vehicle.id,
+          userId: currentUser.id,
+          customerName: currentUser.name,
+          customerEmail: currentUser.email,
+          pickupStationId: vehicle.stationId,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          basePriceMkd: payload.basePriceMkd,
+          discountAppliedMkd: payload.discountAppliedMkd,
+          totalPriceMkd: payload.totalPriceMkd,
+        });
+        await syncFromSupabase();
+        setBookingVehicle(null);
+        setActiveTab('my-rides');
+        showToast(`Reserved ${vehicle.name} (${bookingId}).`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not create reservation.');
+      }
+      return;
+    }
+
     const newRes: Reservation = {
-      id: `RES-${Math.floor(1050 + Math.random() * 8900)}`,
+      id: bookingId,
       vehicleId: vehicle.id,
       customerName: currentUser.name,
       customerEmail: currentUser.email,
@@ -225,19 +342,45 @@ export function App() {
     showToast(`Reserved ${vehicle.name} (${newRes.id}).`);
   };
 
-  const handlePickUp = (reservationId: string) => {
+  const handlePickUp = async (reservationId: string) => {
+    if (supabaseLive) {
+      try {
+        await pickUpReservationInDb(reservationId);
+        await syncFromSupabase();
+        showToast(`Vehicle picked up — reservation ${reservationId} is now Active.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Pickup failed.');
+      }
+      return;
+    }
     setReservations((prev) =>
       prev.map((r) => (r.id === reservationId ? { ...r, status: 'Active' } : r))
     );
     showToast(`Vehicle picked up — reservation ${reservationId} is now Active.`);
   };
 
-  const handleConfirmReturn = (payload: {
+  const handleConfirmReturn = async (payload: {
     reservationId: string;
     returnStationId: string;
     actualReturnTime: string;
     latePenaltyMkd: number;
   }) => {
+    const stationName = stations.find((s) => s.id === payload.returnStationId)?.name ?? 'station';
+    if (supabaseLive) {
+      try {
+        await returnReservationInDb({
+          reservationId: payload.reservationId,
+          returnStationId: payload.returnStationId,
+          actualReturnTime: payload.actualReturnTime,
+        });
+        await syncFromSupabase();
+        showToast(`Vehicle docked at ${stationName}.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Return failed.');
+      }
+      return;
+    }
+
     const target = reservations.find((r) => r.id === payload.reservationId);
     if (!target) return;
 
@@ -254,99 +397,224 @@ export function App() {
           : r
       )
     );
-
     setVehicles((prev) =>
       prev.map((v) =>
         v.id === target.vehicleId ? { ...v, stationId: payload.returnStationId } : v
       )
     );
-
-    const stationName = stations.find((s) => s.id === payload.returnStationId)?.name ?? 'station';
     showToast(`Vehicle docked at ${stationName}.`);
   };
 
-  const handleCancelReservation = (reservationId: string) => {
+  const handleCancelReservation = async (reservationId: string) => {
+    if (supabaseLive) {
+      try {
+        await cancelReservationInDb(reservationId);
+        await syncFromSupabase();
+        showToast(`Reservation ${reservationId} cancelled.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Cancellation failed.');
+      }
+      return;
+    }
     setReservations((prev) =>
       prev.map((r) => (r.id === reservationId ? { ...r, status: 'Cancelled' } : r))
     );
     showToast(`Reservation ${reservationId} cancelled.`);
   };
 
-  // Admin & SuperAdmin handlers with orphan protection + toast feedback
-  const handleToggleMaintenance = (vehicleId: string) => {
+  // Admin & SuperAdmin handlers
+  const handleToggleMaintenance = async (vehicleId: string) => {
     const target = vehicles.find((v) => v.id === vehicleId);
+    if (!target) return;
+    if (supabaseLive) {
+      try {
+        await updateVehicleInDb(vehicleId, { inMaintenance: !target.inMaintenance });
+        await syncFromSupabase();
+        showToast(
+          target.inMaintenance
+            ? `${target.name} restored to public catalog.`
+            : `${target.name} moved to service (hidden from catalog).`
+        );
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Update failed.');
+      }
+      return;
+    }
     setVehicles((prev) =>
       prev.map((v) => (v.id === vehicleId ? { ...v, inMaintenance: !v.inMaintenance } : v))
     );
-    if (target) {
-      showToast(
-        target.inMaintenance
-          ? `${target.name} restored to public catalog.`
-          : `${target.name} moved to service (hidden from catalog).`
-      );
-    }
+    showToast(
+      target.inMaintenance
+        ? `${target.name} restored to public catalog.`
+        : `${target.name} moved to service (hidden from catalog).`
+    );
   };
 
-  const handleAddVehicle = (veh: Omit<Vehicle, 'id'>) => {
+  const handleAddVehicle = async (veh: Omit<Vehicle, 'id'>) => {
     const created: Vehicle = { ...veh, id: `veh-${Date.now()}` };
+    if (supabaseLive) {
+      try {
+        await addVehicleInDb(created);
+        await syncFromSupabase();
+        showToast(`Added ${created.name} to fleet.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not add vehicle.');
+      }
+      return;
+    }
     setVehicles((prev) => [created, ...prev]);
     showToast(`Added ${created.name} to fleet.`);
   };
 
-  const handleUpdateVehicle = (vehicleId: string, patch: Partial<Vehicle>) => {
+  const handleUpdateVehicle = async (vehicleId: string, patch: Partial<Vehicle>) => {
+    if (supabaseLive) {
+      try {
+        await updateVehicleInDb(vehicleId, patch);
+        await syncFromSupabase();
+        showToast('Vehicle details updated.');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Update failed.');
+      }
+      return;
+    }
     setVehicles((prev) => prev.map((v) => (v.id === vehicleId ? { ...v, ...patch } : v)));
     showToast('Vehicle details updated.');
   };
 
-  const handleDeleteVehicle = (vehicleId: string) => {
+  const handleDeleteVehicle = async (vehicleId: string) => {
     const target = vehicles.find((v) => v.id === vehicleId);
+    if (supabaseLive) {
+      try {
+        await deleteVehicleInDb(vehicleId);
+        await syncFromSupabase();
+        showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Delete failed.');
+      }
+      return;
+    }
     setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
     showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
   };
 
-  const handleAddType = (vt: Omit<VehicleType, 'id'>) => {
-    setVehicleTypes((prev) => [...prev, { ...vt, id: `vt-${Date.now()}` }]);
-    showToast(`Added vehicle type "${vt.name}".`);
+  const handleAddType = async (vt: Omit<VehicleType, 'id'>) => {
+    const created: VehicleType = { ...vt, id: `vt-${Date.now()}` };
+    if (supabaseLive) {
+      try {
+        await addVehicleTypeInDb(created);
+        await syncFromSupabase();
+        showToast(`Added vehicle type "${created.name}".`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not add type.');
+      }
+      return;
+    }
+    setVehicleTypes((prev) => [...prev, created]);
+    showToast(`Added vehicle type "${created.name}".`);
   };
 
-  const handleDeleteType = (typeId: string) => {
+  const handleDeleteType = async (typeId: string) => {
     const inUse = vehicles.some((v) => v.typeId === typeId);
     if (inUse) {
       showToast('Cannot delete type while vehicles are still assigned to it.');
+      return;
+    }
+    if (supabaseLive) {
+      try {
+        await deleteVehicleTypeInDb(typeId);
+        await syncFromSupabase();
+        showToast('Vehicle type deleted.');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Delete failed.');
+      }
       return;
     }
     setVehicleTypes((prev) => prev.filter((t) => t.id !== typeId));
     showToast('Vehicle type deleted.');
   };
 
-  const handleAddStation = (st: Omit<Station, 'id'>) => {
-    setStations((prev) => [...prev, { ...st, id: `st-${Date.now()}` }]);
-    showToast(`Added station "${st.name}".`);
+  const handleAddStation = async (st: Omit<Station, 'id'>) => {
+    const created: Station = { ...st, id: `st-${Date.now()}` };
+    if (supabaseLive) {
+      try {
+        await addStationInDb(created);
+        await syncFromSupabase();
+        showToast(`Added station "${created.name}".`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not add station.');
+      }
+      return;
+    }
+    setStations((prev) => [...prev, created]);
+    showToast(`Added station "${created.name}".`);
   };
 
-  const handleDeleteStation = (stationId: string) => {
+  const handleDeleteStation = async (stationId: string) => {
     const hasDocked = vehicles.some((v) => v.stationId === stationId);
     if (hasDocked) {
       showToast('Move docked vehicles to another station before deleting this station.');
+      return;
+    }
+    if (supabaseLive) {
+      try {
+        await deleteStationInDb(stationId);
+        await syncFromSupabase();
+        showToast('Station deleted.');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Delete failed.');
+      }
       return;
     }
     setStations((prev) => prev.filter((s) => s.id !== stationId));
     showToast('Station deleted.');
   };
 
-  const handleAdminSetReservationStatus = (reservationId: string, status: ReservationStatus) => {
+  const handleAdminSetReservationStatus = async (
+    reservationId: string,
+    status: ReservationStatus
+  ) => {
+    if (supabaseLive) {
+      try {
+        await adminSetReservationStatusInDb(reservationId, status);
+        await syncFromSupabase();
+        showToast(`Reservation ${reservationId} marked ${status}.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Status update failed.');
+      }
+      return;
+    }
     setReservations((prev) =>
       prev.map((r) => (r.id === reservationId ? { ...r, status } : r))
     );
     showToast(`Reservation ${reservationId} marked ${status}.`);
   };
 
-  const handleDeleteReservation = (reservationId: string) => {
+  const handleDeleteReservation = async (reservationId: string) => {
+    if (supabaseLive) {
+      try {
+        await deleteReservationInDb(reservationId);
+        await syncFromSupabase();
+        showToast(`Reservation ${reservationId} removed.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Delete failed.');
+      }
+      return;
+    }
     setReservations((prev) => prev.filter((r) => r.id !== reservationId));
     showToast(`Reservation ${reservationId} removed.`);
   };
 
-  const handleCreateUser = (user: Omit<UserAccount, 'id' | 'createdAt'>) => {
+  const handleCreateUser = async (user: Omit<UserAccount, 'id' | 'createdAt'>) => {
+    if (supabaseLive) {
+      try {
+        await signUpWithSupabase(user.name, user.email, user.password);
+        await syncFromSupabase();
+        showToast(`Created account for ${user.name}.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not create user.');
+      }
+      return;
+    }
     const created: UserAccount = {
       ...user,
       id: `usr-${Date.now()}`,
@@ -356,25 +624,59 @@ export function App() {
     showToast(`Created ${created.role} account for ${created.name}.`);
   };
 
-  const handleUpdateUserRole = (userId: string, nextRole: AccountRole) => {
+  const handleUpdateUserRole = async (userId: string, nextRole: AccountRole) => {
+    if (supabaseLive) {
+      try {
+        await updateProfileRoleInDb(userId, nextRole);
+        await syncFromSupabase();
+        showToast(`Updated user role to ${nextRole}.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Role update failed.');
+      }
+      return;
+    }
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: nextRole } : u)));
     showToast(`Updated user role to ${nextRole}.`);
   };
 
-  const handleToggleUserActive = (userId: string) => {
+  const handleToggleUserActive = async (userId: string) => {
     const target = users.find((u) => u.id === userId);
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, active: !u.active } : u)));
-    if (target) {
-      showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
+    if (!target) return;
+    if (supabaseLive) {
+      try {
+        await toggleProfileActiveInDb(userId, !target.active);
+        await syncFromSupabase();
+        showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Update failed.');
+      }
+      return;
     }
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, active: !u.active } : u)));
+    showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
+    if (supabaseLive) {
+      try {
+        await deleteProfileInDb(userId);
+        await syncFromSupabase();
+        showToast('User profile deleted.');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Delete failed.');
+      }
+      return;
+    }
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     showToast('User account deleted.');
   };
 
   const handleResetSystemData = () => {
+    if (supabaseLive) {
+      void syncFromSupabase();
+      showToast('Synced latest state from Supabase PostgreSQL.');
+      return;
+    }
     setStations(INITIAL_STATIONS);
     setVehicleTypes(INITIAL_VEHICLE_TYPES);
     setVehicles(INITIAL_VEHICLES);
@@ -398,7 +700,7 @@ export function App() {
         onSelectTab={setActiveTab}
         currentUser={currentUser}
         onOpenAuth={(mode) => setAuthModalMode(mode)}
-        onLogout={handleLogout}
+        onLogout={() => void handleLogout()}
         activeStationsCount={stations.length}
         freeFleetCount={freeNowCount}
         activeRideCount={myActiveCount}
@@ -410,7 +712,7 @@ export function App() {
             vehicles={vehicles}
             vehicleTypes={vehicleTypes}
             stations={stations}
-            reservations={reservations}
+            reservations={availabilityReservations}
             filterTypeId={filterTypeId}
             filterStationId={filterStationId}
             filterStart={filterStart}
@@ -430,7 +732,7 @@ export function App() {
             vehicles={vehicles}
             vehicleTypes={vehicleTypes}
             stations={stations}
-            reservations={reservations}
+            reservations={availabilityReservations}
             filterTypeId={filterTypeId}
             filterStationId={filterStationId}
             filterStart={filterStart}
@@ -447,7 +749,7 @@ export function App() {
           <StationsPage
             stations={stations}
             vehicles={vehicles}
-            reservations={reservations}
+            reservations={availabilityReservations}
             filterStart={filterStart}
             filterEnd={filterEnd}
             onBrowseStation={(stationId) => {
@@ -464,9 +766,9 @@ export function App() {
             vehicles={vehicles}
             stations={stations}
             onOpenAuth={(mode) => setAuthModalMode(mode)}
-            onPickUp={handlePickUp}
+            onPickUp={(id) => void handlePickUp(id)}
             onOpenReturn={(res) => setReturningReservation(res)}
-            onCancel={handleCancelReservation}
+            onCancel={(id) => void handleCancelReservation(id)}
           />
         )}
 
@@ -478,21 +780,21 @@ export function App() {
             vehicleTypes={vehicleTypes}
             stations={stations}
             reservations={reservations}
-            monthlyRevenue={HISTORICAL_MONTHLY_REVENUE}
-            onToggleMaintenance={handleToggleMaintenance}
-            onAddVehicle={handleAddVehicle}
-            onUpdateVehicle={handleUpdateVehicle}
-            onDeleteVehicle={handleDeleteVehicle}
-            onAddType={handleAddType}
-            onDeleteType={handleDeleteType}
-            onAddStation={handleAddStation}
-            onDeleteStation={handleDeleteStation}
-            onAdminSetReservationStatus={handleAdminSetReservationStatus}
-            onDeleteReservation={handleDeleteReservation}
-            onCreateUser={handleCreateUser}
-            onUpdateUserRole={handleUpdateUserRole}
-            onToggleUserActive={handleToggleUserActive}
-            onDeleteUser={handleDeleteUser}
+            monthlyRevenue={monthlyRevenue}
+            onToggleMaintenance={(id) => void handleToggleMaintenance(id)}
+            onAddVehicle={(v) => void handleAddVehicle(v)}
+            onUpdateVehicle={(id, p) => void handleUpdateVehicle(id, p)}
+            onDeleteVehicle={(id) => void handleDeleteVehicle(id)}
+            onAddType={(vt) => void handleAddType(vt)}
+            onDeleteType={(id) => void handleDeleteType(id)}
+            onAddStation={(st) => void handleAddStation(st)}
+            onDeleteStation={(id) => void handleDeleteStation(id)}
+            onAdminSetReservationStatus={(id, st) => void handleAdminSetReservationStatus(id, st)}
+            onDeleteReservation={(id) => void handleDeleteReservation(id)}
+            onCreateUser={(u) => void handleCreateUser(u)}
+            onUpdateUserRole={(id, r) => void handleUpdateUserRole(id, r)}
+            onToggleUserActive={(id) => void handleToggleUserActive(id)}
+            onDeleteUser={(id) => void handleDeleteUser(id)}
             onResetSystemData={handleResetSystemData}
           />
         )}
@@ -508,9 +810,11 @@ export function App() {
       {authModalMode && (
         <AuthModal
           initialMode={authModalMode}
+          useSupabaseAuth={supabaseLive}
           users={users}
-          onLoginSuccess={handleLoginSuccess}
-          onRegisterSuccess={handleRegisterSuccess}
+          onSupabaseAuthSuccess={handleSupabaseAuthSuccess}
+          onLocalLoginSuccess={handleLocalLoginSuccess}
+          onLocalRegisterSuccess={handleLocalRegisterSuccess}
           onClose={() => setAuthModalMode(null)}
         />
       )}
@@ -522,10 +826,10 @@ export function App() {
           station={stations.find((s) => s.id === bookingVehicle.stationId)}
           initialStart={filterStart}
           initialEnd={filterEnd}
-          reservations={reservations}
+          reservations={availabilityReservations}
           currentUser={currentUser}
           onRequireAuth={(mode) => setAuthModalMode(mode)}
-          onConfirm={handleConfirmReservation}
+          onConfirm={(p) => void handleConfirmReservation(p)}
           onClose={() => setBookingVehicle(null)}
         />
       )}
@@ -535,12 +839,11 @@ export function App() {
           reservation={returningReservation}
           vehicle={returningVehicle}
           stations={stations}
-          onConfirmReturn={handleConfirmReturn}
+          onConfirmReturn={(p) => void handleConfirmReturn(p)}
           onClose={() => setReturningReservation(null)}
         />
       )}
 
-      {/* Persistently mounted polite live region for screen-reader toast announcements */}
       <div
         role="status"
         aria-live="polite"
