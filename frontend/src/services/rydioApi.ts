@@ -9,10 +9,12 @@ import type {
   VehicleType,
 } from '../types/rydio';
 
-const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/+$/, '');
+const ENV_API = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/+$/, '');
+// In production served directly by .NET 10 (same origin), use relative /api paths.
+const API_BASE = ENV_API || (import.meta.env.PROD ? '' : '');
 const TOKEN_KEY = 'rydio_jwt_token_v1';
 
-export const isApiConfigured = Boolean(API_BASE);
+export const isApiConfigured = Boolean(ENV_API) || import.meta.env.PROD;
 
 export function getStoredToken(): string | null {
   return window.localStorage.getItem(TOKEN_KEY);
@@ -24,7 +26,7 @@ export function setStoredToken(token: string | null) {
 }
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (!API_BASE) throw new Error('API URL not configured.');
+  if (!isApiConfigured) throw new Error('API URL not configured.');
   const token = getStoredToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -64,7 +66,7 @@ export interface BootstrapPayload {
 }
 
 export async function fetchBootstrapData(): Promise<BootstrapPayload | null> {
-  if (!API_BASE) return null;
+  if (!isApiConfigured) return null;
   return apiFetch<BootstrapPayload>('/api/catalog/bootstrap');
 }
 

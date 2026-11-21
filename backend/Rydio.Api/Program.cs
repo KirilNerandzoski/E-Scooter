@@ -86,11 +86,14 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "rydio-dotnet10-api" }));
 app.MapControllers();
+app.MapFallbackToFile("index.html");
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
