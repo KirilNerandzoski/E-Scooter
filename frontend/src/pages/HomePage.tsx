@@ -1,7 +1,8 @@
-import { ArrowRight, BatteryCharging, MapPin, ChevronRight } from 'lucide-react';
+import { ArrowRight, BatteryCharging, MapPin, ChevronRight, AlertCircle } from 'lucide-react';
 import type { Reservation, Station, Vehicle, VehicleType } from '../types/rydio';
-import { formatMkd, isVehicleAvailable } from '../utils/pricing';
+import { formatMkd, isVehicleAvailable, toLocalDateTimeInput, toSafeIso } from '../utils/pricing';
 import { SuminagashiCanvas } from '../components/SuminagashiCanvas';
+import { VehicleSilhouette, resolveVehicleSilhouetteKind } from '../components/VehicleSilhouette';
 
 interface HomePageProps {
   vehicles: Vehicle[];
@@ -21,6 +22,13 @@ interface HomePageProps {
   onSelectVehicle: (vehicle: Vehicle) => void;
 }
 
+const DURATION_PRESETS = [
+  { label: '2h', hours: 2 },
+  { label: '4h', hours: 4 },
+  { label: 'Full Day', hours: 24 },
+  { label: 'Weekend', hours: 48 },
+];
+
 export function HomePage({
   vehicles,
   vehicleTypes,
@@ -38,19 +46,18 @@ export function HomePage({
   onViewStations,
   onSelectVehicle,
 }: HomePageProps) {
+  const startIso = toSafeIso(filterStart);
+  const endIso = toSafeIso(filterEnd);
+  const windowInvalid =
+    !startIso || !endIso || new Date(endIso).getTime() <= new Date(startIso).getTime();
+
   const availableVehicles = vehicles.filter((v) => {
     if (v.inMaintenance) return false;
     if (filterTypeId && v.typeId !== filterTypeId) return false;
     if (filterStationId && v.stationId !== filterStationId) return false;
-    return isVehicleAvailable(
-      v,
-      reservations,
-      new Date(filterStart).toISOString(),
-      new Date(filterEnd).toISOString()
-    );
+    return isVehicleAvailable(v, reservations, startIso, endIso);
   });
 
-  // Always show up to 4 cards on the hero strip (featured first)
   const featuredList = [...availableVehicles]
     .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
     .slice(0, 4);
@@ -60,12 +67,21 @@ export function HomePage({
   const getTypeName = (id: string) =>
     vehicleTypes.find((t) => t.id === id)?.name ?? 'Electric';
 
+  const applyPreset = (hours: number) => {
+    const baseStart = startIso ? new Date(startIso) : new Date(Date.now() + 60 * 60 * 1000);
+    if (!startIso) {
+      baseStart.setMinutes(0, 0, 0);
+      onChangeStart(toLocalDateTimeInput(baseStart));
+    }
+    const nextEnd = new Date(baseStart.getTime() + hours * 60 * 60 * 1000);
+    onChangeEnd(toLocalDateTimeInput(nextEnd));
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Upper-right flowing Suminagashi indigo ink current */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[440px] overflow-hidden">
         <SuminagashiCanvas className="h-full w-full opacity-95" />
-        {/* Soft left fade so hero text always keeps crisp paper contrast */}
         <div
           aria-hidden="true"
           className="absolute inset-0 bg-gradient-to-r from-[#F6F7F9] via-[#F6F7F9]/65 to-transparent"
@@ -82,7 +98,7 @@ export function HomePage({
           </h1>
           <p className="mt-5 max-w-xl text-base leading-relaxed text-[#515F73]">
             Reserve electric scooters and e-bikes by the hour or full day across six Skopje
-            stations. Transparent rates, automatic full-day discounts, and instant station pickup.
+            stations. Transparent hourly tariffs with an automatic daily rate cap.
           </p>
         </div>
 
@@ -98,7 +114,7 @@ export function HomePage({
             <div>
               <label
                 htmlFor="hero-type"
-                className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+                className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
               >
                 VEHICLE TYPE
               </label>
@@ -106,7 +122,7 @@ export function HomePage({
                 id="hero-type"
                 value={filterTypeId}
                 onChange={(e) => onChangeType(e.target.value)}
-                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] focus:border-[#0A1A33] focus:outline-none"
+                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
               >
                 <option value="">All Vehicles</option>
                 {vehicleTypes.map((t) => (
@@ -120,7 +136,7 @@ export function HomePage({
             <div>
               <label
                 htmlFor="hero-station"
-                className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+                className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
               >
                 PICKUP STATION
               </label>
@@ -128,7 +144,7 @@ export function HomePage({
                 id="hero-station"
                 value={filterStationId}
                 onChange={(e) => onChangeStation(e.target.value)}
-                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] focus:border-[#0A1A33] focus:outline-none"
+                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
               >
                 <option value="">All Skopje Stations</option>
                 {stations.map((s) => (
@@ -142,7 +158,7 @@ export function HomePage({
             <div>
               <label
                 htmlFor="hero-start"
-                className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+                className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
               >
                 START WINDOW
               </label>
@@ -151,14 +167,14 @@ export function HomePage({
                 type="datetime-local"
                 value={filterStart}
                 onChange={(e) => onChangeStart(e.target.value)}
-                className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] focus:border-[#0A1A33] focus:outline-none"
+                className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
               />
             </div>
 
             <div>
               <label
                 htmlFor="hero-end"
-                className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+                className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
               >
                 RETURN WINDOW
               </label>
@@ -167,10 +183,20 @@ export function HomePage({
                 type="datetime-local"
                 value={filterEnd}
                 onChange={(e) => onChangeEnd(e.target.value)}
-                className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] focus:border-[#0A1A33] focus:outline-none"
+                className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
               />
             </div>
           </div>
+
+          {windowInvalid && (
+            <div
+              role="alert"
+              className="mt-3 flex items-center gap-2 rounded border border-[#9B2C2C]/30 bg-[#FFF5F5] px-3 py-2 text-xs text-[#822020]"
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>Select a valid start and return time (return must be after start).</span>
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[#DDE2E8] pt-4">
             <button
@@ -185,8 +211,22 @@ export function HomePage({
               onClick={onViewStations}
               className="inline-flex items-center gap-2 rounded border border-[#0A1A33]/35 bg-white px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-[#0A1A33] transition-colors hover:border-[#0A1A33] hover:bg-[#F6F7F9]"
             >
-              VIEW STATIONS
+              SKOPJE MAP
             </button>
+
+            <div className="flex flex-wrap items-center gap-1.5 sm:ml-2">
+              {DURATION_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => applyPreset(p.hours)}
+                  className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium text-[#515F73] transition-colors hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
             <span className="tabular-nums ml-auto text-xs text-[#515F73]">
               {availableVehicles.length}{' '}
               {availableVehicles.length === 1 ? 'vehicle' : 'vehicles'} free for this window
@@ -194,7 +234,7 @@ export function HomePage({
           </div>
         </form>
 
-        {/* Lower 4-Card Strip (Option 1 signature: 1st deep indigo, 3 paper-white) */}
+        {/* Lower 4-Card Strip (semantic <article> cards with hairline vehicle silhouettes) */}
         <section aria-label="Available rides for your selected window" className="mt-10">
           {featuredList.length === 0 ? (
             <div className="rounded-lg border border-[#DDE2E8] bg-white p-10 text-center">
@@ -219,12 +259,13 @@ export function HomePage({
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {featuredList.map((vehicle, index) => {
                 const isLead = index === 0;
+                const typeName = getTypeName(vehicle.typeId);
+                const silhouetteKind = resolveVehicleSilhouetteKind(vehicle.name, typeName);
+
                 return (
-                  <button
+                  <article
                     key={vehicle.id}
-                    type="button"
-                    onClick={() => onSelectVehicle(vehicle)}
-                    className={`group flex min-h-[252px] flex-col justify-between rounded-lg p-5 text-left transition-all duration-200 ${
+                    className={`flex min-h-[268px] flex-col justify-between rounded-lg p-5 transition-all duration-200 ${
                       isLead
                         ? 'indigo-basin-card border border-[#0A1A33] text-[#F6F7F9] shadow-[0_12px_30px_rgba(10,26,51,0.18)] hover:-translate-y-0.5'
                         : 'border border-[#DDE2E8] bg-white text-[#0A1A33] hover:-translate-y-0.5 hover:border-[#0A1A33]/50 hover:shadow-[0_10px_24px_rgba(10,26,51,0.06)]'
@@ -233,11 +274,13 @@ export function HomePage({
                     <div>
                       <div className="flex items-center justify-between gap-2">
                         <span
-                          className={`text-[10px] font-medium tracking-[0.16em] ${
+                          className={`text-[11px] font-medium tracking-[0.12em] ${
                             isLead ? 'text-[#B9CAE3]' : 'text-[#515F73]'
                           }`}
                         >
-                          {isLead ? 'FEATURED RIDE' : getTypeName(vehicle.typeId).toUpperCase()}
+                          {isLead
+                            ? `FEATURED · ${typeName.toUpperCase()}`
+                            : typeName.toUpperCase()}
                         </span>
                         <span
                           className={`tabular-nums inline-flex items-center gap-1 text-[11px] font-medium ${
@@ -249,8 +292,16 @@ export function HomePage({
                         </span>
                       </div>
 
+                      <div className="mt-3">
+                        <VehicleSilhouette
+                          kind={silhouetteKind}
+                          inverted={isLead}
+                          className="h-9 w-16"
+                        />
+                      </div>
+
                       <h2
-                        className={`mt-3 font-display text-2xl font-normal leading-snug ${
+                        className={`mt-2.5 font-display text-xl font-medium leading-snug ${
                           isLead ? 'text-white' : 'text-[#0A1A33]'
                         }`}
                       >
@@ -258,7 +309,7 @@ export function HomePage({
                       </h2>
 
                       <p
-                        className={`mt-2 flex items-center gap-1.5 text-xs ${
+                        className={`mt-1.5 flex items-center gap-1.5 text-xs ${
                           isLead ? 'text-[#C4D2E8]' : 'text-[#515F73]'
                         }`}
                       >
@@ -268,7 +319,7 @@ export function HomePage({
                     </div>
 
                     <div
-                      className={`mt-6 border-t pt-4 ${
+                      className={`mt-5 border-t pt-4 ${
                         isLead ? 'border-white/15' : 'border-[#DDE2E8]'
                       }`}
                     >
@@ -289,11 +340,11 @@ export function HomePage({
                             isLead ? 'text-[#C4D2E8]' : 'text-[#515F73]'
                           }`}
                         >
-                          {formatMkd(vehicle.fullDayRateMkd)} / day
+                          Cap {formatMkd(vehicle.fullDayRateMkd)}/d
                         </span>
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between">
+                      <div className="mt-3.5 flex items-center justify-between">
                         <span
                           className={`tabular-nums text-[11px] ${
                             isLead ? 'text-[#B9CAE3]' : 'text-[#515F73]'
@@ -301,17 +352,21 @@ export function HomePage({
                         >
                           {vehicle.rangeKm} km range
                         </span>
-                        <span
-                          className={`inline-flex items-center gap-1 text-xs font-medium transition-transform group-hover:translate-x-1 ${
-                            isLead ? 'text-white' : 'text-[#0A1A33]'
+                        <button
+                          type="button"
+                          onClick={() => onSelectVehicle(vehicle)}
+                          className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                            isLead
+                              ? 'text-white hover:bg-white/15'
+                              : 'text-[#0A1A33] hover:bg-[#F6F7F9]'
                           }`}
                         >
                           Reserve
                           <ArrowRight className="h-3.5 w-3.5" />
-                        </span>
+                        </button>
                       </div>
                     </div>
-                  </button>
+                  </article>
                 );
               })}
             </div>

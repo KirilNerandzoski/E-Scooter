@@ -6,7 +6,11 @@ import {
   formatMkd,
   isVehicleAvailable,
   MAX_RENTAL_DAYS,
+  toLocalDateTimeInput,
+  toSafeIso,
 } from '../utils/pricing';
+import { Modal } from './Modal';
+import { VehicleSilhouette, resolveVehicleSilhouetteKind } from './VehicleSilhouette';
 
 interface ReservationModalProps {
   vehicle: Vehicle;
@@ -27,6 +31,13 @@ interface ReservationModalProps {
   }) => void;
   onClose: () => void;
 }
+
+const DURATION_PRESETS = [
+  { label: '2h', hours: 2 },
+  { label: '4h', hours: 4 },
+  { label: 'Full Day', hours: 24 },
+  { label: 'Weekend (48h)', hours: 48 },
+];
 
 export function ReservationModal({
   vehicle,
@@ -53,36 +64,52 @@ export function ReservationModal({
     return !isVehicleAvailable(
       vehicle,
       reservations,
-      new Date(startTime).toISOString(),
-      new Date(endTime).toISOString()
+      toSafeIso(startTime),
+      toSafeIso(endTime)
     );
   }, [vehicle, reservations, startTime, endTime, price.valid]);
 
   const canSubmit = price.valid && !hasConflict && !vehicle.inMaintenance && Boolean(currentUser);
 
+  const applyPreset = (hours: number) => {
+    const startIso = toSafeIso(startTime);
+    const baseStart = startIso ? new Date(startIso) : new Date(Date.now() + 60 * 60 * 1000);
+    if (!startIso) {
+      baseStart.setMinutes(0, 0, 0);
+      setStartTime(toLocalDateTimeInput(baseStart));
+    }
+    const nextEnd = new Date(baseStart.getTime() + hours * 60 * 60 * 1000);
+    setEndTime(toLocalDateTimeInput(nextEnd));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    const startIso = toSafeIso(startTime);
+    const endIso = toSafeIso(endTime);
+    if (!canSubmit || !startIso || !endIso) return;
     onConfirm({
       vehicleId: vehicle.id,
-      startTime: new Date(startTime).toISOString(),
-      endTime: new Date(endTime).toISOString(),
+      startTime: startIso,
+      endTime: endIso,
       basePriceMkd: price.basePriceMkd,
       discountAppliedMkd: price.discountAppliedMkd,
       totalPriceMkd: price.finalPriceMkd,
     });
   };
 
+  const silhouetteKind = resolveVehicleSilhouetteKind(
+    vehicle.name,
+    vehicleType?.name ?? 'E-Scooter'
+  );
+
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="reserve-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1A33]/45 p-4 backdrop-blur-[2px]"
-    >
-      <div className="w-full max-w-xl rounded-lg border border-[#DDE2E8] bg-[#F6F7F9] shadow-2xl">
-        {/* Header */}
-        <div className="flex items-start justify-between rounded-t-lg border-b border-[#DDE2E8] bg-white px-6 py-5">
+    <Modal labelledBy="reserve-modal-title" maxWidthClass="max-w-xl" onClose={onClose}>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 rounded-t-lg border-b border-[#DDE2E8] bg-white px-6 py-5">
+        <div className="flex items-center gap-4">
+          <div className="hidden rounded-md border border-[#DDE2E8] bg-[#F6F7F9] p-2 sm:block">
+            <VehicleSilhouette kind={silhouetteKind} className="h-9 w-14" />
+          </div>
           <div>
             <h2
               id="reserve-modal-title"
@@ -103,165 +130,185 @@ export function ReservationModal({
               </span>
             </p>
           </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close reservation dialog"
+          className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] transition-colors hover:border-[#0A1A33] hover:text-[#0A1A33]"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5 p-6">
+        {/* Login Required Notice */}
+        {!currentUser && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#0A1A33]/25 bg-white px-4 py-3 text-xs text-[#0A1A33]">
+            <span>Sign in or create an account to confirm this reservation.</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onRequireAuth('login')}
+                className="rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A]"
+              >
+                SIGN IN
+              </button>
+              <button
+                type="button"
+                onClick={() => onRequireAuth('register')}
+                className="rounded border border-[#0A1A33]/35 bg-white px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[#0A1A33] hover:border-[#0A1A33]"
+              >
+                REGISTER
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Duration Presets */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+            QUICK DURATION:
+          </span>
+          {DURATION_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => applyPreset(preset.hours)}
+              className="rounded border border-[#DDE2E8] bg-white px-2.5 py-1 text-xs font-medium text-[#0A1A33] transition-colors hover:border-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Date/Time Pickers */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label
+              htmlFor="reserve-start"
+              className="mb-1.5 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
+            >
+              PICKUP DATE &amp; TIME
+            </label>
+            <input
+              id="reserve-start"
+              type="datetime-local"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              required
+              className="tabular-nums w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33]"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="reserve-end"
+              className="mb-1.5 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
+            >
+              RETURN DATE &amp; TIME
+            </label>
+            <input
+              id="reserve-end"
+              type="datetime-local"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              required
+              className="tabular-nums w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33]"
+            />
+          </div>
+        </div>
+
+        {/* Validation / Conflict Feedback */}
+        {(!price.valid || hasConflict) && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-md border border-[#9B2C2C]/30 bg-[#FFF5F5] px-4 py-3 text-xs text-[#822020]"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {!price.valid
+                ? price.error
+                : 'This vehicle already has an overlapping reservation during the selected window. Choose a different time slot.'}
+            </span>
+          </div>
+        )}
+
+        {/* Transparent Live Receipt */}
+        <div className="rounded-md border border-[#DDE2E8] bg-white p-4">
+          <div className="flex items-center justify-between text-xs text-[#515F73]">
+            <span>Hourly tariff</span>
+            <span className="tabular-nums font-medium text-[#0A1A33]">
+              {formatMkd(vehicle.hourlyRateMkd)} / hr
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-[#515F73]">
+            <span>Full-day capped rate (auto-applied on 6h+ / 24h blocks)</span>
+            <span className="tabular-nums font-medium text-[#0A1A33]">
+              {formatMkd(vehicle.fullDayRateMkd)} / day
+            </span>
+          </div>
+
+          {price.valid && (
+            <>
+              <div className="my-3 h-px bg-[#DDE2E8]" />
+              <div className="flex items-center justify-between text-xs text-[#515F73]">
+                <span>
+                  Duration ({price.fullDays > 0 ? `${price.fullDays}d ` : ''}
+                  {price.remainingHours}h · {price.totalHours}h total)
+                </span>
+                <span className="tabular-nums text-[#0A1A33]">
+                  {formatMkd(price.basePriceMkd)}
+                </span>
+              </div>
+
+              {price.hasFullDayDiscount && (
+                <div className="mt-2 flex items-center justify-between text-xs text-[#0A1A33]">
+                  <span className="inline-flex items-center gap-1.5 font-medium">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#0A1A33]" />
+                    Full-day rate cap applied
+                  </span>
+                  <span className="tabular-nums font-semibold">
+                    −{formatMkd(price.discountAppliedMkd)}
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-3 flex items-baseline justify-between border-t border-[#DDE2E8] pt-3">
+                <span className="text-xs font-medium tracking-[0.14em] text-[#515F73]">
+                  ESTIMATED TOTAL
+                </span>
+                <span className="tabular-nums font-display text-2xl font-medium text-[#0A1A33]">
+                  {formatMkd(price.finalPriceMkd)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <p className="text-[11px] leading-relaxed text-[#515F73]">
+          Free cancellation up to 1 hour before pickup. Maximum duration {MAX_RENTAL_DAYS} days.
+          Late returns incur a 1.5× hourly tariff penalty.
+        </p>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-3 pt-1">
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close reservation dialog"
-            className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] transition-colors hover:border-[#0A1A33] hover:text-[#0A1A33]"
+            className="rounded border border-[#DDE2E8] bg-white px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-[#515F73] transition-colors hover:border-[#0A1A33] hover:text-[#0A1A33]"
           >
-            <X className="h-4 w-4" />
+            CANCEL
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            CONFIRM RESERVATION
+            <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5 p-6">
-          {/* Login Required Notice */}
-          {!currentUser && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#0A1A33]/25 bg-white px-4 py-3 text-xs text-[#0A1A33]">
-              <span>An account is required to confirm a reservation.</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onRequireAuth('login')}
-                  className="rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A]"
-                >
-                  SIGN IN
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRequireAuth('register')}
-                  className="rounded border border-[#0A1A33]/35 bg-white px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[#0A1A33] hover:border-[#0A1A33]"
-                >
-                  REGISTER
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Date/Time Pickers */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="reserve-start"
-                className="mb-1.5 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
-              >
-                PICKUP DATE &amp; TIME
-              </label>
-              <input
-                id="reserve-start"
-                type="datetime-local"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-                className="tabular-nums w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33] focus:border-[#0A1A33] focus:outline-none"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="reserve-end"
-                className="mb-1.5 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
-              >
-                RETURN DATE &amp; TIME
-              </label>
-              <input
-                id="reserve-end"
-                type="datetime-local"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                required
-                className="tabular-nums w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33] focus:border-[#0A1A33] focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Validation / Conflict Feedback */}
-          {(!price.valid || hasConflict) && (
-            <div className="flex items-start gap-2.5 rounded-md border border-[#9B2C2C]/30 bg-[#FFF5F5] px-4 py-3 text-xs text-[#822020]">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                {!price.valid
-                  ? price.error
-                  : 'This vehicle already has an overlapping reservation during the selected window. Choose a different time slot.'}
-              </span>
-            </div>
-          )}
-
-          {/* Transparent Live Receipt */}
-          <div className="rounded-md border border-[#DDE2E8] bg-white p-4">
-            <div className="flex items-center justify-between text-xs text-[#515F73]">
-              <span>Hourly tariff</span>
-              <span className="tabular-nums font-medium text-[#0A1A33]">
-                {formatMkd(vehicle.hourlyRateMkd)} / hr
-              </span>
-            </div>
-            <div className="mt-2 flex items-center justify-between text-xs text-[#515F73]">
-              <span>Full-day capped rate (24h)</span>
-              <span className="tabular-nums font-medium text-[#0A1A33]">
-                {formatMkd(vehicle.fullDayRateMkd)} / day
-              </span>
-            </div>
-
-            {price.valid && (
-              <>
-                <div className="my-3 h-px bg-[#DDE2E8]" />
-                <div className="flex items-center justify-between text-xs text-[#515F73]">
-                  <span>
-                    Duration ({price.fullDays > 0 ? `${price.fullDays}d ` : ''}
-                    {price.remainingHours}h · {price.totalHours}h total)
-                  </span>
-                  <span className="tabular-nums text-[#0A1A33]">
-                    {formatMkd(price.basePriceMkd)}
-                  </span>
-                </div>
-
-                {price.hasFullDayDiscount && (
-                  <div className="mt-2 flex items-center justify-between text-xs text-[#0A1A33]">
-                    <span className="inline-flex items-center gap-1.5 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-[#0A1A33]" />
-                      Full-day discount applied
-                    </span>
-                    <span className="tabular-nums font-semibold">
-                      −{formatMkd(price.discountAppliedMkd)}
-                    </span>
-                  </div>
-                )}
-
-                <div className="mt-3 flex items-baseline justify-between border-t border-[#DDE2E8] pt-3">
-                  <span className="text-xs font-medium tracking-[0.14em] text-[#515F73]">
-                    ESTIMATED TOTAL
-                  </span>
-                  <span className="tabular-nums font-display text-2xl font-medium text-[#0A1A33]">
-                    {formatMkd(price.finalPriceMkd)}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-
-          <p className="text-[11px] leading-relaxed text-[#515F73]">
-            Free cancellation up to 1 hour before pickup. Maximum duration {MAX_RENTAL_DAYS} days.
-            Late returns incur a 1.5× hourly tariff penalty.
-          </p>
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded border border-[#DDE2E8] bg-white px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-[#515F73] transition-colors hover:border-[#0A1A33] hover:text-[#0A1A33]"
-            >
-              CANCEL
-            </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              CONFIRM RESERVATION
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { LeftRail, type NavTab } from './components/LeftRail';
 import { RightTelemetry } from './components/RightTelemetry';
@@ -27,7 +27,12 @@ import type {
   Vehicle,
   VehicleType,
 } from './types/rydio';
-import { isVehicleAvailable, toLocalDateTimeInput } from './utils/pricing';
+import {
+  formatWindowDuration,
+  isVehicleAvailable,
+  toLocalDateTimeInput,
+  toSafeIso,
+} from './utils/pricing';
 
 function loadState<T>(key: string, fallback: T): T {
   try {
@@ -64,7 +69,6 @@ export function App() {
 
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | null>(null);
 
-  // Default search window: +2h to +6h from now
   const [filterTypeId, setFilterTypeId] = useState('');
   const [filterStationId, setFilterStationId] = useState('');
   const [filterStart, setFilterStart] = useState(() => {
@@ -81,6 +85,7 @@ export function App() {
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
   const [returningReservation, setReturningReservation] = useState<Reservation | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const currentUser = useMemo(
     () => users.find((u) => u.id === currentUserId && u.active) ?? null,
@@ -111,9 +116,19 @@ export function App() {
     window.localStorage.setItem('rydio_reservations_v1', JSON.stringify(reservations));
   }, [reservations]);
 
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   const showToast = (msg: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast(msg);
-    window.setTimeout(() => setToast(null), 3600);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3600);
   };
 
   const handleLoginSuccess = (user: UserAccount) => {
@@ -141,6 +156,27 @@ export function App() {
     return vehicles.filter((v) => isVehicleAvailable(v, reservations, nowIso, soonIso)).length;
   }, [vehicles, reservations]);
 
+  const windowFreeCount = useMemo(() => {
+    const startIso = toSafeIso(filterStart);
+    const endIso = toSafeIso(filterEnd);
+    return vehicles.filter((v) => {
+      if (v.inMaintenance) return false;
+      if (filterTypeId && v.typeId !== filterTypeId) return false;
+      if (filterStationId && v.stationId !== filterStationId) return false;
+      return isVehicleAvailable(v, reservations, startIso, endIso);
+    }).length;
+  }, [vehicles, reservations, filterTypeId, filterStationId, filterStart, filterEnd]);
+
+  const windowDurationLabel = useMemo(
+    () => formatWindowDuration(filterStart, filterEnd),
+    [filterStart, filterEnd]
+  );
+
+  const selectedStationLabel = useMemo(() => {
+    if (!filterStationId) return 'All Skopje';
+    return stations.find((s) => s.id === filterStationId)?.name ?? 'All Skopje';
+  }, [filterStationId, stations]);
+
   const activeRidesCount = useMemo(
     () => reservations.filter((r) => r.status === 'Active').length,
     [reservations]
@@ -155,7 +191,6 @@ export function App() {
     ).length;
   }, [reservations, currentUser]);
 
-  // Reservation creation
   const handleConfirmReservation = (payload: {
     vehicleId: string;
     startTime: string;
@@ -226,9 +261,8 @@ export function App() {
       )
     );
 
-    setReturningReservation(null);
     const stationName = stations.find((s) => s.id === payload.returnStationId)?.name ?? 'station';
-    showToast(`Vehicle returned to ${stationName} and ride completed.`);
+    showToast(`Vehicle docked at ${stationName}.`);
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -238,11 +272,19 @@ export function App() {
     showToast(`Reservation ${reservationId} cancelled.`);
   };
 
-  // Admin & SuperAdmin handlers
+  // Admin & SuperAdmin handlers with orphan protection + toast feedback
   const handleToggleMaintenance = (vehicleId: string) => {
+    const target = vehicles.find((v) => v.id === vehicleId);
     setVehicles((prev) =>
       prev.map((v) => (v.id === vehicleId ? { ...v, inMaintenance: !v.inMaintenance } : v))
     );
+    if (target) {
+      showToast(
+        target.inMaintenance
+          ? `${target.name} restored to public catalog.`
+          : `${target.name} moved to service (hidden from catalog).`
+      );
+    }
   };
 
   const handleAddVehicle = (veh: Omit<Vehicle, 'id'>) => {
@@ -257,7 +299,9 @@ export function App() {
   };
 
   const handleDeleteVehicle = (vehicleId: string) => {
+    const target = vehicles.find((v) => v.id === vehicleId);
     setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
+    showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
   };
 
   const handleAddType = (vt: Omit<VehicleType, 'id'>) => {
@@ -266,7 +310,13 @@ export function App() {
   };
 
   const handleDeleteType = (typeId: string) => {
+    const inUse = vehicles.some((v) => v.typeId === typeId);
+    if (inUse) {
+      showToast('Cannot delete type while vehicles are still assigned to it.');
+      return;
+    }
     setVehicleTypes((prev) => prev.filter((t) => t.id !== typeId));
+    showToast('Vehicle type deleted.');
   };
 
   const handleAddStation = (st: Omit<Station, 'id'>) => {
@@ -275,7 +325,13 @@ export function App() {
   };
 
   const handleDeleteStation = (stationId: string) => {
+    const hasDocked = vehicles.some((v) => v.stationId === stationId);
+    if (hasDocked) {
+      showToast('Move docked vehicles to another station before deleting this station.');
+      return;
+    }
     setStations((prev) => prev.filter((s) => s.id !== stationId));
+    showToast('Station deleted.');
   };
 
   const handleAdminSetReservationStatus = (reservationId: string, status: ReservationStatus) => {
@@ -291,10 +347,6 @@ export function App() {
   };
 
   const handleCreateUser = (user: Omit<UserAccount, 'id' | 'createdAt'>) => {
-    if (users.some((u) => u.email.toLowerCase() === user.email.toLowerCase())) {
-      showToast('A user with that email already exists.');
-      return;
-    }
     const created: UserAccount = {
       ...user,
       id: `usr-${Date.now()}`,
@@ -310,7 +362,11 @@ export function App() {
   };
 
   const handleToggleUserActive = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, active: !u.active } : u)));
+    if (target) {
+      showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
+    }
   };
 
   const handleDeleteUser = (userId: string) => {
@@ -348,7 +404,7 @@ export function App() {
         activeRideCount={myActiveCount}
       />
 
-      <main className="lg:pl-[196px] xl:pr-[116px]">
+      <main className="lg:pl-[196px] xl:pr-[128px]">
         {activeTab === 'home' && (
           <HomePage
             vehicles={vehicles}
@@ -443,12 +499,12 @@ export function App() {
       </main>
 
       <RightTelemetry
-        freeNow={freeNowCount}
-        stationsCount={stations.length}
+        windowDurationLabel={windowDurationLabel}
+        windowFreeCount={windowFreeCount}
+        selectedStationLabel={selectedStationLabel}
         activeRidesCount={activeRidesCount}
       />
 
-      {/* Auth Modal (Login / Create Account) */}
       {authModalMode && (
         <AuthModal
           initialMode={authModalMode}
@@ -459,7 +515,6 @@ export function App() {
         />
       )}
 
-      {/* Reservation Modal */}
       {bookingVehicle && (
         <ReservationModal
           vehicle={bookingVehicle}
@@ -475,7 +530,6 @@ export function App() {
         />
       )}
 
-      {/* Return Modal */}
       {returningReservation && returningVehicle && (
         <ReturnModal
           reservation={returningReservation}
@@ -486,16 +540,20 @@ export function App() {
         />
       )}
 
-      {/* Subtle Toast */}
-      {toast && (
-        <div
-          role="status"
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-md border border-[#0A1A33] bg-[#0A1A33] px-4 py-3 text-xs font-medium text-white shadow-xl"
-        >
-          <CheckCircle2 className="h-4 w-4 text-[#C4D2E8]" />
-          {toast}
-        </div>
-      )}
+      {/* Persistently mounted polite live region for screen-reader toast announcements */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="pointer-events-none fixed bottom-6 right-6 z-50"
+      >
+        {toast && (
+          <div className="pointer-events-auto flex items-center gap-2.5 rounded-md border border-[#0A1A33] bg-[#0A1A33] px-4 py-3 text-xs font-medium text-white shadow-xl">
+            <CheckCircle2 className="h-4 w-4 text-[#C4D2E8]" />
+            {toast}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

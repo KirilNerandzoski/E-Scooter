@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { ArrowRight, MapPin } from 'lucide-react';
 import type { Reservation, Station, Vehicle } from '../types/rydio';
-import { isVehicleAvailable } from '../utils/pricing';
+import { isVehicleAvailable, toSafeIso } from '../utils/pricing';
+import { SkopjeVardarMap } from '../components/SkopjeVardarMap';
 
 interface StationsPageProps {
   stations: Station[];
@@ -19,8 +21,20 @@ export function StationsPage({
   filterEnd,
   onBrowseStation,
 }: StationsPageProps) {
-  const startIso = new Date(filterStart).toISOString();
-  const endIso = new Date(filterEnd).toISOString();
+  const [selectedStationId, setSelectedStationId] = useState<string | null>(
+    stations[0]?.id ?? null
+  );
+
+  const startIso = toSafeIso(filterStart);
+  const endIso = toSafeIso(filterEnd);
+
+  const stationSummaries = stations.map((station) => {
+    const stationVehicles = vehicles.filter((v) => v.stationId === station.id);
+    const freeCount = stationVehicles.filter((v) =>
+      isVehicleAvailable(v, reservations, startIso, endIso)
+    ).length;
+    return { station, freeCount };
+  });
 
   return (
     <div className="mx-auto max-w-[1120px] px-6 py-10 sm:px-10">
@@ -29,22 +43,32 @@ export function StationsPage({
           Skopje Docking Stations
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-[#515F73]">
-          Pick up your reserved scooter or e-bike at any hub and return it to any Skopje station
-          when your ride ends.
+          Pick up your reserved scooter or e-bike at any hub along the Vardar corridor and return it
+          to any Skopje station when your ride ends.
         </p>
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {stations.map((station) => {
-          const stationVehicles = vehicles.filter((v) => v.stationId === station.id);
-          const freeCount = stationVehicles.filter((v) =>
-            isVehicleAvailable(v, reservations, startIso, endIso)
-          ).length;
+      {/* Interactive Skopje / Vardar Corridor Map */}
+      <div className="mt-6">
+        <SkopjeVardarMap
+          items={stationSummaries}
+          selectedStationId={selectedStationId}
+          onSelectStation={(id) => setSelectedStationId(id)}
+        />
+      </div>
 
+      <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {stationSummaries.map(({ station, freeCount }) => {
+          const isHighlighted = selectedStationId === station.id;
           return (
-            <div
+            <article
               key={station.id}
-              className="flex flex-col justify-between rounded-lg border border-[#DDE2E8] bg-white p-6 transition-colors hover:border-[#0A1A33]/45"
+              onClick={() => setSelectedStationId(station.id)}
+              className={`flex flex-col justify-between rounded-lg border bg-white p-6 transition-colors ${
+                isHighlighted
+                  ? 'border-[#0A1A33] shadow-[0_8px_24px_rgba(10,26,51,0.08)]'
+                  : 'border-[#DDE2E8] hover:border-[#0A1A33]/45'
+              }`}
             >
               <div>
                 <div className="flex items-center justify-between">
@@ -67,21 +91,24 @@ export function StationsPage({
 
               <div className="mt-6 border-t border-[#DDE2E8] pt-4">
                 <div className="flex items-baseline justify-between text-xs">
-                  <span className="text-[#515F73]">Available for selected window</span>
+                  <span className="text-[#515F73]">Free for selected window</span>
                   <span className="tabular-nums font-semibold text-[#0A1A33]">
-                    {freeCount} / {station.capacity} bays
+                    {freeCount} / {station.capacity} docks
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => onBrowseStation(station.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBrowseStation(station.id);
+                  }}
                   className="mt-4 inline-flex w-full items-center justify-between rounded border border-[#0A1A33]/25 bg-[#F6F7F9] px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-[#0A1A33] transition-colors hover:bg-[#0A1A33] hover:text-white"
                 >
                   BROWSE STATION FLEET
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </div>
+            </article>
           );
         })}
       </div>

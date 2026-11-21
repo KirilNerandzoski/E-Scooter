@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
   ArrowUpDown,
   BatteryCharging,
@@ -9,7 +10,8 @@ import {
   MapPin,
 } from 'lucide-react';
 import type { Reservation, Station, Vehicle, VehicleType } from '../types/rydio';
-import { formatMkd, isVehicleAvailable } from '../utils/pricing';
+import { formatMkd, isVehicleAvailable, toSafeIso } from '../utils/pricing';
+import { VehicleSilhouette, resolveVehicleSilhouetteKind } from '../components/VehicleSilhouette';
 
 interface CatalogPageProps {
   vehicles: Vehicle[];
@@ -27,7 +29,7 @@ interface CatalogPageProps {
   onSelectVehicle: (vehicle: Vehicle) => void;
 }
 
-const PAGE_SIZE = 4;
+const PAGE_SIZE = 6;
 
 export function CatalogPage({
   vehicles,
@@ -47,10 +49,12 @@ export function CatalogPage({
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
 
-  const filteredVehicles = useMemo(() => {
-    const startIso = new Date(filterStart).toISOString();
-    const endIso = new Date(filterEnd).toISOString();
+  const startIso = toSafeIso(filterStart);
+  const endIso = toSafeIso(filterEnd);
+  const windowInvalid =
+    !startIso || !endIso || new Date(endIso).getTime() <= new Date(startIso).getTime();
 
+  const filteredVehicles = useMemo(() => {
     return vehicles
       .filter((v) => {
         if (v.inMaintenance) return false;
@@ -63,7 +67,7 @@ export function CatalogPage({
           ? a.hourlyRateMkd - b.hourlyRateMkd
           : b.hourlyRateMkd - a.hourlyRateMkd
       );
-  }, [vehicles, reservations, filterTypeId, filterStationId, filterStart, filterEnd, sortOrder]);
+  }, [vehicles, reservations, filterTypeId, filterStationId, startIso, endIso, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredVehicles.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -80,8 +84,8 @@ export function CatalogPage({
             Fleet Catalog &amp; Live Availability
           </h1>
           <p className="mt-2 text-sm text-[#515F73]">
-            Showing only vehicles free across your entire selected rental window. Vehicles in
-            maintenance are automatically excluded.
+            Showing only vehicles free across your selected window. Vehicles in maintenance are
+            automatically excluded.
           </p>
         </div>
 
@@ -100,7 +104,7 @@ export function CatalogPage({
         <div>
           <label
             htmlFor="cat-type"
-            className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
           >
             TYPE
           </label>
@@ -125,7 +129,7 @@ export function CatalogPage({
         <div>
           <label
             htmlFor="cat-station"
-            className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
           >
             STATION
           </label>
@@ -150,7 +154,7 @@ export function CatalogPage({
         <div>
           <label
             htmlFor="cat-start"
-            className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
           >
             START
           </label>
@@ -169,7 +173,7 @@ export function CatalogPage({
         <div>
           <label
             htmlFor="cat-end"
-            className="mb-1 block text-[10px] font-medium tracking-[0.15em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
           >
             END
           </label>
@@ -186,6 +190,16 @@ export function CatalogPage({
         </div>
       </div>
 
+      {windowInvalid && (
+        <div
+          role="alert"
+          className="mt-4 flex items-center gap-2 rounded-md border border-[#9B2C2C]/30 bg-[#FFF5F5] px-4 py-3 text-xs text-[#822020]"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>Enter a valid start and return date/time to filter exact availability.</span>
+        </div>
+      )}
+
       {/* Results Ledger */}
       <div className="mt-6 space-y-3">
         {pageItems.length === 0 ? (
@@ -198,63 +212,72 @@ export function CatalogPage({
             </p>
           </div>
         ) : (
-          pageItems.map((vehicle) => (
-            <div
-              key={vehicle.id}
-              className="flex flex-col justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white p-5 transition-colors hover:border-[#0A1A33]/45 sm:flex-row sm:items-center"
-            >
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="tabular-nums rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-medium text-[#0A1A33]">
-                    {vehicle.code}
-                  </span>
-                  <span className="text-[11px] font-medium tracking-[0.14em] text-[#515F73]">
-                    {getTypeName(vehicle.typeId).toUpperCase()}
-                  </span>
+          pageItems.map((vehicle) => {
+            const typeName = getTypeName(vehicle.typeId);
+            const silhouetteKind = resolveVehicleSilhouetteKind(vehicle.name, typeName);
+            return (
+              <article
+                key={vehicle.id}
+                className="flex flex-col justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white p-5 transition-colors hover:border-[#0A1A33]/45 sm:flex-row sm:items-center"
+              >
+                <div className="flex items-center gap-5">
+                  <div className="hidden rounded-md border border-[#DDE2E8] bg-[#F6F7F9] p-2.5 sm:block">
+                    <VehicleSilhouette kind={silhouetteKind} className="h-10 w-16" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="tabular-nums rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-medium text-[#0A1A33]">
+                        {vehicle.code}
+                      </span>
+                      <span className="text-[11px] font-medium tracking-[0.14em] text-[#515F73]">
+                        {typeName.toUpperCase()}
+                      </span>
+                    </div>
+
+                    <h2 className="font-display text-2xl font-normal text-[#0A1A33]">
+                      {vehicle.name}
+                    </h2>
+
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-[#515F73]">
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-[#0A1A33]" strokeWidth={1.6} />
+                        {getStationName(vehicle.stationId)}
+                      </span>
+                      <span className="tabular-nums inline-flex items-center gap-1.5">
+                        <BatteryCharging className="h-3.5 w-3.5 text-[#0A1A33]" strokeWidth={1.6} />
+                        {vehicle.batteryPercent}% ({vehicle.rangeKm} km)
+                      </span>
+                      <span className="tabular-nums inline-flex items-center gap-1.5">
+                        <Gauge className="h-3.5 w-3.5 text-[#0A1A33]" strokeWidth={1.6} />
+                        {vehicle.maxSpeedKmh} km/h max
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <h2 className="font-display text-2xl font-normal text-[#0A1A33]">
-                  {vehicle.name}
-                </h2>
+                <div className="flex items-center justify-between gap-6 border-t border-[#DDE2E8] pt-4 sm:border-t-0 sm:pt-0">
+                  <div className="text-left sm:text-right">
+                    <p className="tabular-nums font-display text-2xl font-medium text-[#0A1A33]">
+                      {formatMkd(vehicle.hourlyRateMkd)}
+                      <span className="text-xs font-normal text-[#515F73]"> / hr</span>
+                    </p>
+                    <p className="tabular-nums text-xs text-[#515F73]">
+                      Full-day cap: {formatMkd(vehicle.fullDayRateMkd)}
+                    </p>
+                  </div>
 
-                <div className="flex flex-wrap items-center gap-4 text-xs text-[#515F73]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-[#0A1A33]" strokeWidth={1.6} />
-                    {getStationName(vehicle.stationId)}
-                  </span>
-                  <span className="tabular-nums inline-flex items-center gap-1.5">
-                    <BatteryCharging className="h-3.5 w-3.5 text-[#0A1A33]" strokeWidth={1.6} />
-                    {vehicle.batteryPercent}% ({vehicle.rangeKm} km)
-                  </span>
-                  <span className="tabular-nums inline-flex items-center gap-1.5">
-                    <Gauge className="h-3.5 w-3.5 text-[#0A1A33]" strokeWidth={1.6} />
-                    {vehicle.maxSpeedKmh} km/h max
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectVehicle(vehicle)}
+                    className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A]"
+                  >
+                    RESERVE
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-6 border-t border-[#DDE2E8] pt-4 sm:border-t-0 sm:pt-0">
-                <div className="text-left sm:text-right">
-                  <p className="tabular-nums font-display text-2xl font-medium text-[#0A1A33]">
-                    {formatMkd(vehicle.hourlyRateMkd)}
-                    <span className="text-xs font-normal text-[#515F73]"> / hr</span>
-                  </p>
-                  <p className="tabular-nums text-xs text-[#515F73]">
-                    Full day: {formatMkd(vehicle.fullDayRateMkd)} (-20%)
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onSelectVehicle(vehicle)}
-                  className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A]"
-                >
-                  RESERVE
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          ))
+              </article>
+            );
+          })
         )}
       </div>
 

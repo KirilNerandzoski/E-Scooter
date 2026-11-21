@@ -18,15 +18,44 @@ export function rangesOverlap(
 }
 
 /**
+ * Safely converts a date string (such as a datetime-local value) to an ISO string,
+ * returning null instead of throwing RangeError if empty or invalid.
+ */
+export function toSafeIso(value: string): string | null {
+  if (!value || !value.trim()) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+/**
+ * Human-readable duration label for a selected start/end window.
+ */
+export function formatWindowDuration(startValue: string, endValue: string): string {
+  const startIso = toSafeIso(startValue);
+  const endIso = toSafeIso(endValue);
+  if (!startIso || !endIso) return 'Invalid';
+  const diffMs = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (diffMs <= 0) return 'Invalid';
+  const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days > 0 && hours > 0) return `${days}d ${hours}h`;
+  if (days > 0) return `${days}d`;
+  return `${totalHours}h`;
+}
+
+/**
  * Checks if a vehicle is available (not in maintenance and has no overlapping Reserved/Active reservation).
  */
 export function isVehicleAvailable(
   vehicle: Vehicle,
   reservations: Reservation[],
-  startIso: string,
-  endIso: string
+  startIso: string | null,
+  endIso: string | null
 ): boolean {
   if (vehicle.inMaintenance) return false;
+  if (!startIso || !endIso) return true;
   const start = new Date(startIso);
   const end = new Date(endIso);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {

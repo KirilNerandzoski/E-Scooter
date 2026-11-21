@@ -1,63 +1,65 @@
 interface RightTelemetryProps {
-  freeNow: number;
-  stationsCount: number;
+  windowDurationLabel: string;
+  windowFreeCount: number;
+  selectedStationLabel: string;
   activeRidesCount: number;
 }
 
+/**
+ * Quiet desktop margin displaying selected-window trip context (zero duplication of LeftRail totals).
+ */
 export function RightTelemetry({
-  freeNow,
-  stationsCount,
+  windowDurationLabel,
+  windowFreeCount,
+  selectedStationLabel,
   activeRidesCount,
 }: RightTelemetryProps) {
   return (
     <aside
-      aria-label="Live fleet metrics"
-      className="hidden xl:fixed xl:inset-y-0 xl:right-0 xl:z-10 xl:flex xl:w-[116px] xl:flex-col xl:justify-end xl:border-l xl:border-[#DDE2E8]/80 xl:bg-[#F6F7F9]/85 xl:px-4 xl:py-8"
+      aria-label="Selected rental window context"
+      className="hidden xl:fixed xl:inset-y-0 xl:right-0 xl:z-10 xl:flex xl:w-[128px] xl:flex-col xl:justify-end xl:border-l xl:border-[#DDE2E8]/80 xl:bg-[#F6F7F9]/85 xl:px-4 xl:py-8"
     >
-      <div className="space-y-6">
+      <div className="space-y-5">
         <div>
-          <p className="text-[9px] font-medium tracking-[0.16em] text-[#515F73]">FREE NOW</p>
+          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">WINDOW</p>
           <p className="tabular-nums mt-1 font-display text-lg font-medium text-[#0A1A33]">
-            {freeNow}
+            {windowDurationLabel}
           </p>
         </div>
 
         <div className="h-px w-8 bg-[#DDE2E8]" />
 
         <div>
-          <p className="text-[9px] font-medium tracking-[0.16em] text-[#515F73]">STATIONS</p>
+          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">MATCHING</p>
           <p className="tabular-nums mt-1 font-display text-lg font-medium text-[#0A1A33]">
-            {String(stationsCount).padStart(2, '0')}
+            {windowFreeCount} free
           </p>
         </div>
 
         <div className="h-px w-8 bg-[#DDE2E8]" />
 
         <div>
-          <p className="text-[9px] font-medium tracking-[0.16em] text-[#515F73]">DAY PASS</p>
-          <p className="tabular-nums mt-1 font-display text-lg font-medium text-[#0A1A33]">
-            -20%
+          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">HUB</p>
+          <p className="mt-1 text-xs font-medium leading-snug text-[#0A1A33]">
+            {selectedStationLabel}
           </p>
         </div>
 
         <div className="h-px w-8 bg-[#DDE2E8]" />
 
         <div>
-          <p className="text-[9px] font-medium tracking-[0.16em] text-[#515F73]">MAX TERM</p>
-          <p className="tabular-nums mt-1 font-display text-sm font-medium text-[#0A1A33]">
-            7 DAYS
-          </p>
+          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">TARIFF</p>
+          <p className="mt-1 text-xs font-medium text-[#0A1A33]">Daily cap</p>
+          <p className="text-[11px] text-[#515F73]">Max 7 days</p>
         </div>
 
         {activeRidesCount > 0 && (
           <>
             <div className="h-px w-8 bg-[#DDE2E8]" />
             <div>
-              <p className="text-[9px] font-medium tracking-[0.16em] text-[#515F73]">
-                ON ROAD
-              </p>
-              <p className="tabular-nums mt-1 font-display text-sm font-medium text-[#0A1A33]">
-                {activeRidesCount} ACTIVE
+              <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">ON ROAD</p>
+              <p className="tabular-nums mt-1 text-xs font-semibold text-[#0A1A33]">
+                {activeRidesCount} active
               </p>
             </div>
           </>

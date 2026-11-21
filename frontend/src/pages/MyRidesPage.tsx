@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Play, CornerDownLeft, XCircle, MapPin, Clock, CheckCircle2 } from 'lucide-react';
 import type { Reservation, Station, UserAccount, Vehicle } from '../types/rydio';
 import { canCancelReservation, formatMkd, formatShortDateTime } from '../utils/pricing';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 interface MyRidesPageProps {
   currentUser: UserAccount | null;
@@ -23,6 +25,8 @@ export function MyRidesPage({
   onOpenReturn,
   onCancel,
 }: MyRidesPageProps) {
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+
   if (!currentUser) {
     return (
       <div className="mx-auto max-w-[960px] px-6 py-16 sm:px-10">
@@ -92,7 +96,7 @@ export function MyRidesPage({
               >
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
-                    <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-medium tracking-[0.16em] text-white">
+                    <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.14em] text-white">
                       ACTIVE RIDE
                     </span>
                     <span className="tabular-nums text-xs text-[#C4D2E8]">{res.id}</span>
@@ -158,7 +162,7 @@ export function MyRidesPage({
                       <span className="tabular-nums text-xs font-medium text-[#0A1A33]">
                         {res.id}
                       </span>
-                      <span className="rounded bg-[#F6F7F9] px-2 py-0.5 text-[10px] font-medium tracking-[0.14em] text-[#0A1A33]">
+                      <span className="rounded bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-medium tracking-[0.12em] text-[#0A1A33]">
                         RESERVED
                       </span>
                     </div>
@@ -171,7 +175,12 @@ export function MyRidesPage({
                     </p>
                     {res.discountAppliedMkd > 0 && (
                       <p className="tabular-nums text-[11px] font-medium text-[#0A1A33]">
-                        Full-day discount applied (−{formatMkd(res.discountAppliedMkd)})
+                        Full-day rate cap applied (−{formatMkd(res.discountAppliedMkd)})
+                      </p>
+                    )}
+                    {!cancellable && (
+                      <p className="text-[11px] text-[#822020]">
+                        Cancellation closed (less than 1 hour before pickup).
                       </p>
                     )}
                   </div>
@@ -191,12 +200,7 @@ export function MyRidesPage({
                     <button
                       type="button"
                       disabled={!cancellable}
-                      title={
-                        cancellable
-                          ? 'Cancel this reservation'
-                          : 'Cancellation closes 1 hour before start time'
-                      }
-                      onClick={() => onCancel(res.id)}
+                      onClick={() => setConfirmCancelId(res.id)}
                       className="inline-flex items-center gap-1.5 rounded border border-[#DDE2E8] bg-white px-3.5 py-2 text-xs font-medium tracking-[0.12em] text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <XCircle className="h-3.5 w-3.5" />
@@ -233,7 +237,7 @@ export function MyRidesPage({
                           {vehicle?.name ?? 'Electric Vehicle'}
                         </span>
                         <span className="tabular-nums text-xs text-[#515F73]">{res.id}</span>
-                        <span className="inline-flex items-center gap-1 rounded bg-[#F6F7F9] px-2 py-0.5 text-[10px] font-medium tracking-[0.12em] text-[#515F73]">
+                        <span className="inline-flex items-center gap-1 rounded bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-medium tracking-[0.1em] text-[#515F73]">
                           {res.status === 'Completed' && <CheckCircle2 className="h-3 w-3" />}
                           {res.status.toUpperCase()}
                         </span>
@@ -261,6 +265,19 @@ export function MyRidesPage({
           )}
         </div>
       </section>
+
+      {confirmCancelId && (
+        <ConfirmDialog
+          title="Cancel reservation?"
+          description={`Reservation ${confirmCancelId} will be cancelled and the vehicle will be released back to the public catalog.`}
+          confirmLabel="Cancel Reservation"
+          onConfirm={() => {
+            onCancel(confirmCancelId);
+            setConfirmCancelId(null);
+          }}
+          onCancel={() => setConfirmCancelId(null)}
+        />
+      )}
     </div>
   );
 }
