@@ -1,0 +1,981 @@
+import { useMemo, useState } from 'react';
+import {
+  Plus,
+  Trash2,
+  Wrench,
+  CheckCircle2,
+  BarChart3,
+  ShieldCheck,
+  RotateCcw,
+  Ban,
+  Play,
+  Check,
+  Pencil,
+} from 'lucide-react';
+import type {
+  AccountRole,
+  MonthlyRevenuePoint,
+  Reservation,
+  ReservationStatus,
+  Station,
+  UserAccount,
+  Vehicle,
+  VehicleType,
+} from '../types/rydio';
+import { formatMkd, formatShortDateTime } from '../utils/pricing';
+
+interface AdminPageProps {
+  currentUser: UserAccount;
+  users: UserAccount[];
+  vehicles: Vehicle[];
+  vehicleTypes: VehicleType[];
+  stations: Station[];
+  reservations: Reservation[];
+  monthlyRevenue: MonthlyRevenuePoint[];
+  onToggleMaintenance: (vehicleId: string) => void;
+  onAddVehicle: (vehicle: Omit<Vehicle, 'id'>) => void;
+  onUpdateVehicle: (vehicleId: string, patch: Partial<Vehicle>) => void;
+  onDeleteVehicle: (vehicleId: string) => void;
+  onAddType: (vt: Omit<VehicleType, 'id'>) => void;
+  onDeleteType: (typeId: string) => void;
+  onAddStation: (station: Omit<Station, 'id'>) => void;
+  onDeleteStation: (stationId: string) => void;
+  onAdminSetReservationStatus: (reservationId: string, status: ReservationStatus) => void;
+  onDeleteReservation: (reservationId: string) => void;
+  onCreateUser: (user: Omit<UserAccount, 'id' | 'createdAt'>) => void;
+  onUpdateUserRole: (userId: string, role: AccountRole) => void;
+  onToggleUserActive: (userId: string) => void;
+  onDeleteUser: (userId: string) => void;
+  onResetSystemData: () => void;
+}
+
+type AdminSection = 'dashboard' | 'vehicles' | 'types' | 'stations' | 'reservations' | 'users';
+
+export function AdminPage({
+  currentUser,
+  users,
+  vehicles,
+  vehicleTypes,
+  stations,
+  reservations,
+  monthlyRevenue,
+  onToggleMaintenance,
+  onAddVehicle,
+  onUpdateVehicle,
+  onDeleteVehicle,
+  onAddType,
+  onDeleteType,
+  onAddStation,
+  onDeleteStation,
+  onAdminSetReservationStatus,
+  onDeleteReservation,
+  onCreateUser,
+  onUpdateUserRole,
+  onToggleUserActive,
+  onDeleteUser,
+  onResetSystemData,
+}: AdminPageProps) {
+  const isSuperAdmin = currentUser.role === 'SuperAdmin';
+  const [section, setSection] = useState<AdminSection>('dashboard');
+
+  // Reservations filters
+  const [resStatusFilter, setResStatusFilter] = useState<ReservationStatus | 'ALL'>('ALL');
+  const [resSearch, setResSearch] = useState('');
+
+  // Add Vehicle form
+  const [newVehName, setNewVehName] = useState('');
+  const [newVehCode, setNewVehCode] = useState('');
+  const [newVehTypeId, setNewVehTypeId] = useState(vehicleTypes[0]?.id ?? '');
+  const [newVehStationId, setNewVehStationId] = useState(stations[0]?.id ?? '');
+  const [newVehRate, setNewVehRate] = useState(190);
+
+  // Inline Vehicle Edit state
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [editRate, setEditRate] = useState(180);
+  const [editStationId, setEditStationId] = useState('');
+  const [editBattery, setEditBattery] = useState(90);
+
+  // Add Type form
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypeDesc, setNewTypeDesc] = useState('');
+  const [newTypeRate, setNewTypeRate] = useState(200);
+
+  // Add Station form
+  const [newStationName, setNewStationName] = useState('');
+  const [newStationDistrict, setNewStationDistrict] = useState('Centar');
+  const [newStationAddress, setNewStationAddress] = useState('');
+  const [newStationCapacity, setNewStationCapacity] = useState(10);
+
+  // Add User form (SuperAdmin)
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState<AccountRole>('Customer');
+
+  const totalRevenueMkd = useMemo(() => {
+    const historical = monthlyRevenue.reduce((sum, m) => sum + m.revenueMkd, 0);
+    const live = reservations
+      .filter((r) => r.status !== 'Cancelled')
+      .reduce((sum, r) => sum + r.totalPriceMkd + r.latePenaltyMkd, 0);
+    return historical + live;
+  }, [monthlyRevenue, reservations]);
+
+  const popularVehicles = useMemo(() => {
+    const counts = new Map<string, number>();
+    reservations.forEach((r) => {
+      if (r.status !== 'Cancelled') {
+        counts.set(r.vehicleId, (counts.get(r.vehicleId) ?? 0) + 1);
+      }
+    });
+    return vehicles
+      .map((v) => ({ vehicle: v, bookings: counts.get(v.id) ?? 0 }))
+      .sort((a, b) => b.bookings - a.bookings)
+      .slice(0, 5);
+  }, [vehicles, reservations]);
+
+  const maxMonthlyRevenue = Math.max(...monthlyRevenue.map((m) => m.revenueMkd), 1);
+
+  const filteredReservations = useMemo(() => {
+    return reservations.filter((r) => {
+      if (resStatusFilter !== 'ALL' && r.status !== resStatusFilter) return false;
+      if (resSearch.trim()) {
+        const q = resSearch.toLowerCase();
+        const veh = vehicles.find((v) => v.id === r.vehicleId);
+        return (
+          r.id.toLowerCase().includes(q) ||
+          r.customerName.toLowerCase().includes(q) ||
+          r.customerEmail.toLowerCase().includes(q) ||
+          (veh?.name.toLowerCase().includes(q) ?? false)
+        );
+      }
+      return true;
+    });
+  }, [reservations, resStatusFilter, resSearch, vehicles]);
+
+  const getStationName = (id?: string) => stations.find((s) => s.id === id)?.name ?? '—';
+  const getTypeName = (id: string) => vehicleTypes.find((t) => t.id === id)?.name ?? '—';
+
+  const handleCreateVehicle = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVehName.trim()) return;
+    onAddVehicle({
+      code: newVehCode.trim() || `RYD-${vehicles.length + 10}`,
+      name: newVehName.trim(),
+      typeId: newVehTypeId || vehicleTypes[0]?.id || '',
+      stationId: newVehStationId || stations[0]?.id || '',
+      hourlyRateMkd: newVehRate,
+      fullDayRateMkd: Math.round(newVehRate * 5.4),
+      batteryPercent: 100,
+      rangeKm: 50,
+      maxSpeedKmh: 25,
+      inMaintenance: false,
+    });
+    setNewVehName('');
+    setNewVehCode('');
+  };
+
+  const startEditVehicle = (v: Vehicle) => {
+    setEditingVehicleId(v.id);
+    setEditRate(v.hourlyRateMkd);
+    setEditStationId(v.stationId);
+    setEditBattery(v.batteryPercent);
+  };
+
+  const saveEditVehicle = (vehicleId: string) => {
+    onUpdateVehicle(vehicleId, {
+      hourlyRateMkd: editRate,
+      fullDayRateMkd: Math.round(editRate * 5.4),
+      stationId: editStationId,
+      batteryPercent: Math.max(0, Math.min(100, editBattery)),
+    });
+    setEditingVehicleId(null);
+  };
+
+  const handleCreateType = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTypeName.trim()) return;
+    onAddType({
+      name: newTypeName.trim(),
+      description: newTypeDesc.trim() || 'Urban electric mobility vehicle.',
+      defaultHourlyRateMkd: newTypeRate,
+      fullDayDiscountPercent: 20,
+    });
+    setNewTypeName('');
+    setNewTypeDesc('');
+  };
+
+  const handleCreateStation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStationName.trim()) return;
+    onAddStation({
+      code: `SKP-${String(stations.length + 1).padStart(2, '0')}`,
+      name: newStationName.trim(),
+      district: newStationDistrict.trim() || 'Centar',
+      address: newStationAddress.trim() || 'Skopje Mobility Dock',
+      capacity: newStationCapacity,
+    });
+    setNewStationName('');
+    setNewStationAddress('');
+  };
+
+  const handleCreateUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserName.trim() || !newUserEmail.trim() || newUserPassword.length < 6) return;
+    onCreateUser({
+      name: newUserName.trim(),
+      email: newUserEmail.trim().toLowerCase(),
+      password: newUserPassword,
+      role: newUserRole,
+      active: true,
+    });
+    setNewUserName('');
+    setNewUserEmail('');
+    setNewUserPassword('');
+    setNewUserRole('Customer');
+  };
+
+  const tabs: [AdminSection, string][] = [
+    ['dashboard', 'Dashboard'],
+    ['vehicles', `Vehicles (${vehicles.length})`],
+    ['types', `Types (${vehicleTypes.length})`],
+    ['stations', `Stations (${stations.length})`],
+    ['reservations', `Reservations (${reservations.length})`],
+    ...(isSuperAdmin ? ([['users', `Users & Roles (${users.length})`]] as [AdminSection, string][]) : []),
+  ];
+
+  return (
+    <div className="mx-auto max-w-[1120px] px-6 py-10 sm:px-10">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#DDE2E8] pb-6">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-[#0A1A33] sm:text-4xl">
+              {isSuperAdmin ? 'SuperAdmin Control Center' : 'Fleet Administration'}
+            </h1>
+            {isSuperAdmin && (
+              <span className="inline-flex items-center gap-1 rounded bg-[#0A1A33] px-2.5 py-1 text-[10px] font-medium tracking-[0.14em] text-white">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                FULL ACCESS
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-sm text-[#515F73]">
+            {isSuperAdmin
+              ? 'Unrestricted control over fleet, stations, vehicle types, all reservations, user accounts, roles, and system state.'
+              : 'Manage Skopje vehicles, types, stations, maintenance states, and revenue analytics.'}
+          </p>
+        </div>
+
+        {/* Sub-navigation */}
+        <div className="flex flex-wrap gap-1.5">
+          {tabs.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSection(id)}
+              className={`rounded px-3.5 py-2 text-xs font-medium tracking-[0.1em] transition-colors ${
+                section === id
+                  ? 'bg-[#0A1A33] text-white'
+                  : 'border border-[#DDE2E8] bg-white text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* DASHBOARD */}
+      {section === 'dashboard' && (
+        <div className="mt-8 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-[#DDE2E8] bg-white p-5">
+              <p className="text-[10px] font-medium tracking-[0.15em] text-[#515F73]">
+                TOTAL REVENUE (6 MO)
+              </p>
+              <p className="tabular-nums mt-2 font-display text-2xl font-medium text-[#0A1A33]">
+                {formatMkd(totalRevenueMkd)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[#DDE2E8] bg-white p-5">
+              <p className="text-[10px] font-medium tracking-[0.15em] text-[#515F73]">
+                ACTIVE RENTALS
+              </p>
+              <p className="tabular-nums mt-2 font-display text-2xl font-medium text-[#0A1A33]">
+                {reservations.filter((r) => r.status === 'Active').length}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[#DDE2E8] bg-white p-5">
+              <p className="text-[10px] font-medium tracking-[0.15em] text-[#515F73]">
+                REGISTERED USERS
+              </p>
+              <p className="tabular-nums mt-2 font-display text-2xl font-medium text-[#0A1A33]">
+                {users.length}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[#DDE2E8] bg-white p-5">
+              <p className="text-[10px] font-medium tracking-[0.15em] text-[#515F73]">
+                IN MAINTENANCE
+              </p>
+              <p className="tabular-nums mt-2 font-display text-2xl font-medium text-[#0A1A33]">
+                {vehicles.filter((v) => v.inMaintenance).length}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-5">
+            {/* Monthly Revenue Chart */}
+            <div className="rounded-lg border border-[#DDE2E8] bg-white p-6 lg:col-span-3">
+              <div className="flex items-center justify-between">
+                <h2 className="font-display text-xl text-[#0A1A33]">Monthly Revenue (MKD)</h2>
+                <BarChart3 className="h-4 w-4 text-[#515F73]" />
+              </div>
+
+              <div className="mt-8 flex h-52 items-end gap-4">
+                {monthlyRevenue.map((item) => {
+                  const pct = Math.round((item.revenueMkd / maxMonthlyRevenue) * 100);
+                  return (
+                    <div key={item.month} className="flex flex-1 flex-col items-center gap-2">
+                      <span className="tabular-nums text-[10px] font-medium text-[#515F73]">
+                        {Math.round(item.revenueMkd / 1000)}k
+                      </span>
+                      <div className="flex h-40 w-full items-end rounded-t bg-[#F6F7F9]">
+                        <div
+                          style={{ height: `${pct}%` }}
+                          className="w-full rounded-t bg-[#0A1A33] transition-all duration-300 hover:bg-[#1E2D4A]"
+                        />
+                      </div>
+                      <span className="text-xs font-medium text-[#0A1A33]">{item.month}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Most Popular Vehicles */}
+            <div className="rounded-lg border border-[#DDE2E8] bg-white p-6 lg:col-span-2">
+              <h2 className="font-display text-xl text-[#0A1A33]">Most Popular Vehicles</h2>
+              <div className="mt-5 divide-y divide-[#DDE2E8]">
+                {popularVehicles.map(({ vehicle, bookings }) => (
+                  <div key={vehicle.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-medium text-[#0A1A33]">{vehicle.name}</p>
+                      <p className="text-xs text-[#515F73]">
+                        {vehicle.code} · {getStationName(vehicle.stationId)}
+                      </p>
+                    </div>
+                    <span className="tabular-nums rounded bg-[#F6F7F9] px-2.5 py-1 text-xs font-semibold text-[#0A1A33]">
+                      {bookings} {bookings === 1 ? 'ride' : 'rides'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {isSuperAdmin && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white px-6 py-4">
+              <div>
+                <p className="text-sm font-medium text-[#0A1A33]">System Maintenance Tools</p>
+                <p className="text-xs text-[#515F73]">
+                  Restore initial Skopje stations, fleet, sample reservations, and default accounts.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onResetSystemData}
+                className="inline-flex items-center gap-1.5 rounded border border-[#0A1A33]/35 bg-[#F6F7F9] px-4 py-2 text-xs font-medium tracking-[0.12em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                RESET DEMO DATA
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VEHICLES CRUD + INLINE EDIT + MAINTENANCE */}
+      {section === 'vehicles' && (
+        <div className="mt-8 space-y-6">
+          <form
+            onSubmit={handleCreateVehicle}
+            className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-2 lg:grid-cols-6"
+          >
+            <input
+              type="text"
+              placeholder="Model name (e.g. Rydio S2)"
+              value={newVehName}
+              onChange={(e) => setNewVehName(e.target.value)}
+              required
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] lg:col-span-2"
+            />
+            <input
+              type="text"
+              placeholder="Code (RYD-S09)"
+              value={newVehCode}
+              onChange={(e) => setNewVehCode(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <select
+              value={newVehTypeId}
+              onChange={(e) => setNewVehTypeId(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            >
+              {vehicleTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={newVehStationId}
+              onChange={(e) => setNewVehStationId(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            >
+              {stations.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={50}
+                step={10}
+                value={newVehRate}
+                onChange={(e) => setNewVehRate(Number(e.target.value))}
+                aria-label="Hourly rate in MKD"
+                className="tabular-nums w-24 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-2 text-sm text-[#0A1A33]"
+              />
+              <button
+                type="submit"
+                className="inline-flex flex-1 items-center justify-center gap-1 rounded bg-[#0A1A33] px-3 py-2 text-xs font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                ADD
+              </button>
+            </div>
+          </form>
+
+          <div className="overflow-x-auto rounded-lg border border-[#DDE2E8] bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-[#DDE2E8] bg-[#F6F7F9] text-[10px] font-medium tracking-[0.14em] text-[#515F73]">
+                <tr>
+                  <th className="px-4 py-3">VEHICLE</th>
+                  <th className="px-4 py-3">TYPE</th>
+                  <th className="px-4 py-3">STATION</th>
+                  <th className="px-4 py-3">TARIFF &amp; BATTERY</th>
+                  <th className="px-4 py-3">STATUS</th>
+                  <th className="px-4 py-3 text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#DDE2E8]">
+                {vehicles.map((v) => {
+                  const isEditing = editingVehicleId === v.id;
+                  return (
+                    <tr key={v.id} className="hover:bg-[#F6F7F9]/60">
+                      <td className="px-4 py-3.5">
+                        <p className="font-medium text-[#0A1A33]">{v.name}</p>
+                        <p className="tabular-nums text-xs text-[#515F73]">{v.code}</p>
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-[#515F73]">
+                        {getTypeName(v.typeId)}
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-[#515F73]">
+                        {isEditing ? (
+                          <select
+                            value={editStationId}
+                            onChange={(e) => setEditStationId(e.target.value)}
+                            className="rounded border border-[#0A1A33] bg-white px-2 py-1 text-xs text-[#0A1A33]"
+                          >
+                            {stations.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          getStationName(v.stationId)
+                        )}
+                      </td>
+                      <td className="tabular-nums px-4 py-3.5 text-xs font-medium text-[#0A1A33]">
+                        {isEditing ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={50}
+                              step={10}
+                              value={editRate}
+                              onChange={(e) => setEditRate(Number(e.target.value))}
+                              className="w-20 rounded border border-[#0A1A33] px-2 py-1 text-xs"
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={editBattery}
+                              onChange={(e) => setEditBattery(Number(e.target.value))}
+                              className="w-16 rounded border border-[#0A1A33] px-2 py-1 text-xs"
+                            />
+                            <span className="text-[10px] text-[#515F73]">%</span>
+                          </div>
+                        ) : (
+                          <span>
+                            {formatMkd(v.hourlyRateMkd)}/hr · {v.batteryPercent}%
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {v.inMaintenance ? (
+                          <span className="inline-flex items-center gap-1 rounded bg-[#FFF5F5] px-2.5 py-1 text-[11px] font-medium text-[#822020]">
+                            <Wrench className="h-3 w-3" />
+                            In Service
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium text-[#0A1A33]">
+                            <CheckCircle2 className="h-3 w-3" />
+                            In Catalog
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          {isEditing ? (
+                            <button
+                              type="button"
+                              onClick={() => saveEditVehicle(v.id)}
+                              className="inline-flex items-center gap-1 rounded bg-[#0A1A33] px-2.5 py-1.5 text-[11px] font-medium text-white"
+                            >
+                              <Check className="h-3 w-3" />
+                              Save
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label={`Edit ${v.name}`}
+                              onClick={() => startEditVehicle(v)}
+                              className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onToggleMaintenance(v.id)}
+                            className="rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#0A1A33] hover:border-[#0A1A33]"
+                          >
+                            {v.inMaintenance ? 'Restore' : 'Service'}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${v.name}`}
+                            onClick={() => onDeleteVehicle(v.id)}
+                            className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* VEHICLE TYPES CRUD */}
+      {section === 'types' && (
+        <div className="mt-8 space-y-6">
+          <form
+            onSubmit={handleCreateType}
+            className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-4"
+          >
+            <input
+              type="text"
+              placeholder="Type name (e.g. Cargo Scooter)"
+              value={newTypeName}
+              onChange={(e) => setNewTypeName(e.target.value)}
+              required
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="text"
+              placeholder="Short description"
+              value={newTypeDesc}
+              onChange={(e) => setNewTypeDesc(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="number"
+              min={50}
+              step={10}
+              value={newTypeRate}
+              onChange={(e) => setNewTypeRate(Number(e.target.value))}
+              className="tabular-nums rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-1.5 rounded bg-[#0A1A33] px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              ADD TYPE
+            </button>
+          </form>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {vehicleTypes.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-start justify-between rounded-lg border border-[#DDE2E8] bg-white p-5"
+              >
+                <div>
+                  <h3 className="font-display text-xl text-[#0A1A33]">{t.name}</h3>
+                  <p className="mt-1 text-xs text-[#515F73]">{t.description}</p>
+                  <p className="tabular-nums mt-3 text-xs font-medium text-[#0A1A33]">
+                    Base {formatMkd(t.defaultHourlyRateMkd)}/hr · Full-day discount{' '}
+                    {t.fullDayDiscountPercent}%
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Delete ${t.name}`}
+                  onClick={() => onDeleteType(t.id)}
+                  className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* STATIONS CRUD */}
+      {section === 'stations' && (
+        <div className="mt-8 space-y-6">
+          <form
+            onSubmit={handleCreateStation}
+            className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-5"
+          >
+            <input
+              type="text"
+              placeholder="Station name"
+              value={newStationName}
+              onChange={(e) => setNewStationName(e.target.value)}
+              required
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="text"
+              placeholder="District"
+              value={newStationDistrict}
+              onChange={(e) => setNewStationDistrict(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="text"
+              placeholder="Address"
+              value={newStationAddress}
+              onChange={(e) => setNewStationAddress(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] sm:col-span-2"
+            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={2}
+                value={newStationCapacity}
+                onChange={(e) => setNewStationCapacity(Number(e.target.value))}
+                aria-label="Station capacity"
+                className="tabular-nums w-20 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-2 text-sm text-[#0A1A33]"
+              />
+              <button
+                type="submit"
+                className="inline-flex flex-1 items-center justify-center gap-1 rounded bg-[#0A1A33] px-3 py-2 text-xs font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                ADD
+              </button>
+            </div>
+          </form>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {stations.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-start justify-between rounded-lg border border-[#DDE2E8] bg-white p-5"
+              >
+                <div>
+                  <span className="tabular-nums text-[10px] font-medium tracking-[0.14em] text-[#515F73]">
+                    {s.code} · {s.district}
+                  </span>
+                  <h3 className="mt-1 font-display text-xl text-[#0A1A33]">{s.name}</h3>
+                  <p className="mt-1 text-xs text-[#515F73]">{s.address}</p>
+                  <p className="tabular-nums mt-2 text-xs font-medium text-[#0A1A33]">
+                    Capacity: {s.capacity} docks
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Delete ${s.name}`}
+                  onClick={() => onDeleteStation(s.id)}
+                  className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ALL RESERVATIONS (with SuperAdmin Force Controls) */}
+      {section === 'reservations' && (
+        <div className="mt-8 space-y-5">
+          <div className="flex flex-wrap gap-3">
+            <input
+              type="search"
+              placeholder="Search booking ID, customer, or vehicle..."
+              value={resSearch}
+              onChange={(e) => setResSearch(e.target.value)}
+              className="min-w-[260px] flex-1 rounded border border-[#DDE2E8] bg-white px-3.5 py-2 text-sm text-[#0A1A33]"
+            />
+            <select
+              value={resStatusFilter}
+              onChange={(e) => setResStatusFilter(e.target.value as ReservationStatus | 'ALL')}
+              className="rounded border border-[#DDE2E8] bg-white px-3.5 py-2 text-sm text-[#0A1A33]"
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="Reserved">Reserved</option>
+              <option value="Active">Active</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-[#DDE2E8] bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-[#DDE2E8] bg-[#F6F7F9] text-[10px] font-medium tracking-[0.14em] text-[#515F73]">
+                <tr>
+                  <th className="px-4 py-3">BOOKING</th>
+                  <th className="px-4 py-3">CUSTOMER</th>
+                  <th className="px-4 py-3">VEHICLE</th>
+                  <th className="px-4 py-3">WINDOW</th>
+                  <th className="px-4 py-3">STATUS</th>
+                  <th className="px-4 py-3 text-right">TOTAL</th>
+                  <th className="px-4 py-3 text-right">CONTROLS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#DDE2E8]">
+                {filteredReservations.map((r) => {
+                  const veh = vehicles.find((v) => v.id === r.vehicleId);
+                  return (
+                    <tr key={r.id} className="hover:bg-[#F6F7F9]/60">
+                      <td className="tabular-nums px-4 py-3.5 text-xs font-medium text-[#0A1A33]">
+                        {r.id}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="text-xs font-medium text-[#0A1A33]">{r.customerName}</p>
+                        <p className="text-[11px] text-[#515F73]">{r.customerEmail}</p>
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-[#0A1A33]">{veh?.name ?? '—'}</td>
+                      <td className="tabular-nums px-4 py-3.5 text-xs text-[#515F73]">
+                        {formatShortDateTime(r.startTime)} → {formatShortDateTime(r.endTime)}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="rounded bg-[#F6F7F9] px-2.5 py-1 text-[10px] font-medium tracking-[0.12em] text-[#0A1A33]">
+                          {r.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="tabular-nums px-4 py-3.5 text-right text-xs font-semibold text-[#0A1A33]">
+                        {formatMkd(r.totalPriceMkd + r.latePenaltyMkd)}
+                        {r.latePenaltyMkd > 0 && (
+                          <span className="block text-[10px] font-normal text-[#822020]">
+                            +{formatMkd(r.latePenaltyMkd)} late
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          {r.status === 'Reserved' && (
+                            <button
+                              type="button"
+                              title="Force Pick Up (Active)"
+                              onClick={() => onAdminSetReservationStatus(r.id, 'Active')}
+                              className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#0A1A33] hover:border-[#0A1A33]"
+                            >
+                              <Play className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {(r.status === 'Reserved' || r.status === 'Active') && (
+                            <>
+                              <button
+                                type="button"
+                                title="Force Complete"
+                                onClick={() => onAdminSetReservationStatus(r.id, 'Completed')}
+                                className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#0A1A33] hover:border-[#0A1A33]"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Force Cancel"
+                                onClick={() => onAdminSetReservationStatus(r.id, 'Cancelled')}
+                                className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                              >
+                                <Ban className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
+                          {isSuperAdmin && (
+                            <button
+                              type="button"
+                              title="Delete reservation permanently"
+                              onClick={() => onDeleteReservation(r.id)}
+                              className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SUPERADMIN USERS & ROLES MANAGEMENT */}
+      {section === 'users' && isSuperAdmin && (
+        <div className="mt-8 space-y-6">
+          <form
+            onSubmit={handleCreateUser}
+            className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-2 lg:grid-cols-5"
+          >
+            <input
+              type="text"
+              placeholder="Full name"
+              value={newUserName}
+              onChange={(e) => setNewUserName(e.target.value)}
+              required
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="email"
+              placeholder="Email address"
+              value={newUserEmail}
+              onChange={(e) => setNewUserEmail(e.target.value)}
+              required
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="password"
+              placeholder="Password (min 6 chars)"
+              value={newUserPassword}
+              onChange={(e) => setNewUserPassword(e.target.value)}
+              minLength={6}
+              required
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <select
+              value={newUserRole}
+              onChange={(e) => setNewUserRole(e.target.value as AccountRole)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            >
+              <option value="Customer">Customer</option>
+              <option value="Admin">Admin</option>
+              <option value="SuperAdmin">SuperAdmin</option>
+            </select>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-1.5 rounded bg-[#0A1A33] px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              CREATE USER
+            </button>
+          </form>
+
+          <div className="overflow-x-auto rounded-lg border border-[#DDE2E8] bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-[#DDE2E8] bg-[#F6F7F9] text-[10px] font-medium tracking-[0.14em] text-[#515F73]">
+                <tr>
+                  <th className="px-4 py-3">USER</th>
+                  <th className="px-4 py-3">ROLE</th>
+                  <th className="px-4 py-3">STATUS</th>
+                  <th className="px-4 py-3 text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#DDE2E8]">
+                {users.map((u) => {
+                  const isSelf = u.id === currentUser.id;
+                  return (
+                    <tr key={u.id} className="hover:bg-[#F6F7F9]/60">
+                      <td className="px-4 py-3.5">
+                        <p className="font-medium text-[#0A1A33]">
+                          {u.name}{' '}
+                          {isSelf && (
+                            <span className="ml-1 text-[10px] text-[#515F73]">(You)</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-[#515F73]">{u.email}</p>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <select
+                          aria-label={`Role for ${u.name}`}
+                          disabled={isSelf}
+                          value={u.role}
+                          onChange={(e) => onUpdateUserRole(u.id, e.target.value as AccountRole)}
+                          className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-50"
+                        >
+                          <option value="Customer">Customer</option>
+                          <option value="Admin">Admin</option>
+                          <option value="SuperAdmin">SuperAdmin</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {u.active ? (
+                          <span className="rounded bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium text-[#0A1A33]">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="rounded bg-[#FFF5F5] px-2.5 py-1 text-[11px] font-medium text-[#822020]">
+                            Suspended
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isSelf}
+                            onClick={() => onToggleUserActive(u.id)}
+                            className="rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#0A1A33] hover:border-[#0A1A33] disabled:opacity-40"
+                          >
+                            {u.active ? 'Suspend' : 'Reactivate'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSelf}
+                            aria-label={`Delete ${u.name}`}
+                            onClick={() => onDeleteUser(u.id)}
+                            className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

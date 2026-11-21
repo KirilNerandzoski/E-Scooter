@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "@fontsource/raleway/300.css";
+@import "@fontsource/raleway/400.css";
+@import "@fontsource/raleway/500.css";
+@import "@fontsource/raleway/600.css";
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/500.css";
+@import "@fontsource/manrope/600.css";
+
+:root {
+  --indigo-depth: #0A1A33;
+  --ink-current: #1E2D4A;
+  --dilute-ink: #515F73;
+  --feathered-gray: #8C97A8;
+  --mist: #DDE2E8;
+  --paper-white: #F6F7F9;
+  --surface-pure: #FFFFFF;
+}
+
+@layer base {
+  html {
+    font-family: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--paper-white);
+    color: var(--indigo-depth);
+    scroll-behavior: smooth;
+    caret-color: var(--indigo-depth);
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: "Raleway", "Manrope", sans-serif;
+  }
+
+  ::selection {
+    background-color: #0A1A33;
+    color: #F6F7F9;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--indigo-depth);
+    outline-offset: 2px;
+  }
+
+  a, button {
+    text-underline-offset: 4px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom subtle paper scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--paper-white);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C7D0DC;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8C97A8;
+}
+
+/* Subtle washi paper grain overlay */
+.washi-surface {
+  background-color: var(--paper-white);
+  background-image:
+    radial-gradient(rgba(10, 26, 51, 0.025) 1px, transparent 0),
+    radial-gradient(rgba(10, 26, 51, 0.018) 1px, transparent 0);
+  background-size: 28px 28px;
+  background-position: 0 0, 14px 14px;
+}
+
+/* Featured indigo card subtle marbled depth */
+.indigo-basin-card {
+  background:
+    radial-gradient(120% 90% at 88% 12%, rgba(72, 110, 165, 0.34) 0%, rgba(10, 26, 51, 0) 58%),
+    radial-gradient(90% 80% at 15% 95%, rgba(45, 76, 122, 0.28) 0%, rgba(10, 26, 51, 0) 60%),
+    linear-gradient(155deg, #0D2242 0%, #0A1A33 55%, #071326 100%);
+}

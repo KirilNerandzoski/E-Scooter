@@ -1,0 +1,22 @@
+# Dependencies & build output
+node_modules/
+dist/
+*.local
+
+# IDE & OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment & secrets
+.env
+.env.*
+
+# Impeccable temporary & large local mock rasters
+.impeccable/mocks/
+.impeccable/build/
+.impeccable/review/
+.impeccable/tmp-*
+.impeccable/config.local.json
