@@ -31,7 +31,9 @@ public class AdminController(RydioDbContext db) : ControllerBase
         bool? InMaintenance);
 
     public record CreateTypeRequest(string Name, string Description, int DefaultHourlyRateMkd, int FullDayDiscountPercent = 20);
+    public record UpdateTypeRequest(string? Name, string? Description, int? DefaultHourlyRateMkd, int? FullDayDiscountPercent);
     public record CreateStationRequest(string Code, string Name, string District, string Address, int Capacity);
+    public record UpdateStationRequest(string? Name, string? District, string? Address, int? Capacity);
     public record UpdateReservationStatusRequest(string Status);
     public record CreateUserRequest(string Name, string Email, string Password, string Role);
     public record UpdateUserRoleRequest(string Role);
@@ -101,6 +103,21 @@ public class AdminController(RydioDbContext db) : ControllerBase
         return Ok(vt);
     }
 
+    [HttpPatch("types/{id}")]
+    public async Task<IActionResult> UpdateType(string id, [FromBody] UpdateTypeRequest req)
+    {
+        var vt = await db.VehicleTypes.FindAsync(id);
+        if (vt is null) return NotFound();
+
+        if (!string.IsNullOrWhiteSpace(req.Name)) vt.Name = req.Name.Trim();
+        if (req.Description is not null) vt.Description = req.Description.Trim();
+        if (req.DefaultHourlyRateMkd.HasValue) vt.DefaultHourlyRateMkd = Math.Max(10, req.DefaultHourlyRateMkd.Value);
+        if (req.FullDayDiscountPercent.HasValue) vt.FullDayDiscountPercent = Math.Clamp(req.FullDayDiscountPercent.Value, 0, 90);
+
+        await db.SaveChangesAsync();
+        return Ok(vt);
+    }
+
     [HttpDelete("types/{id}")]
     public async Task<IActionResult> DeleteType(string id)
     {
@@ -127,6 +144,21 @@ public class AdminController(RydioDbContext db) : ControllerBase
             Capacity = Math.Max(1, req.Capacity),
         };
         db.Stations.Add(st);
+        await db.SaveChangesAsync();
+        return Ok(st);
+    }
+
+    [HttpPatch("stations/{id}")]
+    public async Task<IActionResult> UpdateStation(string id, [FromBody] UpdateStationRequest req)
+    {
+        var st = await db.Stations.FindAsync(id);
+        if (st is null) return NotFound();
+
+        if (!string.IsNullOrWhiteSpace(req.Name)) st.Name = req.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(req.District)) st.District = req.District.Trim();
+        if (!string.IsNullOrWhiteSpace(req.Address)) st.Address = req.Address.Trim();
+        if (req.Capacity.HasValue) st.Capacity = Math.Max(1, req.Capacity.Value);
+
         await db.SaveChangesAsync();
         return Ok(st);
     }

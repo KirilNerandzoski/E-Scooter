@@ -52,9 +52,11 @@ import {
   logoutFromApi,
   pickUpReservationInApi,
   returnReservationInApi,
+  updateStationInApi,
   updateUserActiveInApi,
   updateUserRoleInApi,
   updateVehicleInApi,
+  updateVehicleTypeInApi,
 } from './services/rydioApi';
 
 function loadState<T>(key: string, fallback: T): T {
@@ -493,6 +495,21 @@ export function App() {
     showToast(`Added vehicle type "${vt.name}".`);
   };
 
+  const handleUpdateType = async (typeId: string, patch: Partial<VehicleType>) => {
+    if (apiLive) {
+      try {
+        await updateVehicleTypeInApi(typeId, patch);
+        await syncFromApi();
+        showToast('Vehicle type updated.');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Update failed.');
+      }
+      return;
+    }
+    setVehicleTypes((prev) => prev.map((t) => (t.id === typeId ? { ...t, ...patch } : t)));
+    showToast('Vehicle type updated.');
+  };
+
   const handleDeleteType = async (typeId: string) => {
     const inUse = vehicles.some((v) => v.typeId === typeId);
     if (inUse) {
@@ -526,6 +543,21 @@ export function App() {
     }
     setStations((prev) => [...prev, { ...st, id: `st-${Date.now()}` }]);
     showToast(`Added station "${st.name}".`);
+  };
+
+  const handleUpdateStation = async (stationId: string, patch: Partial<Station>) => {
+    if (apiLive) {
+      try {
+        await updateStationInApi(stationId, patch);
+        await syncFromApi();
+        showToast('Station updated.');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Update failed.');
+      }
+      return;
+    }
+    setStations((prev) => prev.map((s) => (s.id === stationId ? { ...s, ...patch } : s)));
+    showToast('Station updated.');
   };
 
   const handleDeleteStation = async (stationId: string) => {
@@ -765,8 +797,10 @@ export function App() {
             onUpdateVehicle={(id, p) => void handleUpdateVehicle(id, p)}
             onDeleteVehicle={(id) => void handleDeleteVehicle(id)}
             onAddType={(vt) => void handleAddType(vt)}
+            onUpdateType={(id, p) => void handleUpdateType(id, p)}
             onDeleteType={(id) => void handleDeleteType(id)}
             onAddStation={(st) => void handleAddStation(st)}
+            onUpdateStation={(id, p) => void handleUpdateStation(id, p)}
             onDeleteStation={(id) => void handleDeleteStation(id)}
             onAdminSetReservationStatus={(id, st) => void handleAdminSetReservationStatus(id, st)}
             onDeleteReservation={(id) => void handleDeleteReservation(id)}

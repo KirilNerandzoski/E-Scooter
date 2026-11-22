@@ -39,8 +39,10 @@ interface AdminPageProps {
   onUpdateVehicle: (vehicleId: string, patch: Partial<Vehicle>) => void;
   onDeleteVehicle: (vehicleId: string) => void;
   onAddType: (vt: Omit<VehicleType, 'id'>) => void;
+  onUpdateType: (typeId: string, patch: Partial<VehicleType>) => void;
   onDeleteType: (typeId: string) => void;
   onAddStation: (station: Omit<Station, 'id'>) => void;
+  onUpdateStation: (stationId: string, patch: Partial<Station>) => void;
   onDeleteStation: (stationId: string) => void;
   onAdminSetReservationStatus: (reservationId: string, status: ReservationStatus) => void;
   onDeleteReservation: (reservationId: string) => void;
@@ -73,8 +75,10 @@ export function AdminPage({
   onUpdateVehicle,
   onDeleteVehicle,
   onAddType,
+  onUpdateType,
   onDeleteType,
   onAddStation,
+  onUpdateStation,
   onDeleteStation,
   onAdminSetReservationStatus,
   onDeleteReservation,
@@ -110,11 +114,24 @@ export function AdminPage({
   const [newTypeDesc, setNewTypeDesc] = useState('');
   const [newTypeRate, setNewTypeRate] = useState(200);
 
+  // Inline Type Edit state
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [editTypeName, setEditTypeName] = useState('');
+  const [editTypeDesc, setEditTypeDesc] = useState('');
+  const [editTypeRate, setEditTypeRate] = useState(180);
+
   // Add Station form
   const [newStationName, setNewStationName] = useState('');
   const [newStationDistrict, setNewStationDistrict] = useState('Centar');
   const [newStationAddress, setNewStationAddress] = useState('');
   const [newStationCapacity, setNewStationCapacity] = useState(10);
+
+  // Inline Station Edit state
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [editStationName, setEditStationName] = useState('');
+  const [editStationDistrict, setEditStationDistrict] = useState('');
+  const [editStationAddress, setEditStationAddress] = useState('');
+  const [editStationCapacity, setEditStationCapacity] = useState(10);
 
   // Add User form (SuperAdmin)
   const [newUserName, setNewUserName] = useState('');
@@ -676,36 +693,110 @@ export function AdminPage({
           </form>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {vehicleTypes.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-start justify-between rounded-lg border border-[#DDE2E8] bg-white p-5"
-              >
-                <div>
-                  <h3 className="font-display text-xl text-[#0A1A33]">{t.name}</h3>
-                  <p className="mt-1 text-xs text-[#515F73]">{t.description}</p>
-                  <p className="tabular-nums mt-3 text-xs font-medium text-[#0A1A33]">
-                    Base {formatMkd(t.defaultHourlyRateMkd)}/hr · Daily cap enabled
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Delete ${t.name}`}
-                  onClick={() =>
-                    setPendingConfirm({
-                      title: `Delete vehicle type "${t.name}"?`,
-                      description:
-                        'Vehicle types with assigned fleet vehicles cannot be deleted until those vehicles are reassigned.',
-                      confirmLabel: 'Delete Type',
-                      action: () => onDeleteType(t.id),
-                    })
-                  }
-                  className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+            {vehicleTypes.map((t) => {
+              const isEditing = editingTypeId === t.id;
+              return (
+                <div
+                  key={t.id}
+                  className="flex items-start justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white p-5"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+                  {isEditing ? (
+                    <div className="flex-1 space-y-2.5">
+                      <input
+                        type="text"
+                        aria-label={`Edit name for ${t.name}`}
+                        value={editTypeName}
+                        onChange={(e) => setEditTypeName(e.target.value)}
+                        className="w-full rounded border border-[#0A1A33] bg-[#F6F7F9] px-2.5 py-1.5 text-sm font-medium text-[#0A1A33]"
+                      />
+                      <input
+                        type="text"
+                        aria-label={`Edit description for ${t.name}`}
+                        value={editTypeDesc}
+                        onChange={(e) => setEditTypeDesc(e.target.value)}
+                        className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs text-[#0A1A33]"
+                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          aria-label={`Edit default hourly rate for ${t.name}`}
+                          min={50}
+                          step={10}
+                          value={editTypeRate}
+                          onChange={(e) => setEditTypeRate(Number(e.target.value))}
+                          className="tabular-nums w-28 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs text-[#0A1A33]"
+                        />
+                        <span className="text-xs text-[#515F73]">MKD / hr</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateType(t.id, {
+                              name: editTypeName.trim() || t.name,
+                              description: editTypeDesc.trim(),
+                              defaultHourlyRateMkd: editTypeRate,
+                            });
+                            setEditingTypeId(null);
+                          }}
+                          className="ml-auto inline-flex items-center gap-1 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#1E2D4A]"
+                        >
+                          <Check className="h-3 w-3" />
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingTypeId(null)}
+                          className="rounded border border-[#DDE2E8] px-2.5 py-1.5 text-[11px] text-[#515F73] hover:text-[#0A1A33]"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <h3 className="font-display text-xl text-[#0A1A33]">{t.name}</h3>
+                      <p className="mt-1 text-xs text-[#515F73]">{t.description}</p>
+                      <p className="tabular-nums mt-3 text-xs font-medium text-[#0A1A33]">
+                        Base {formatMkd(t.defaultHourlyRateMkd)}/hr · Daily cap enabled
+                      </p>
+                    </div>
+                  )}
+
+                  {!isEditing && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${t.name}`}
+                        onClick={() => {
+                          setEditingTypeId(t.id);
+                          setEditTypeName(t.name);
+                          setEditTypeDesc(t.description);
+                          setEditTypeRate(t.defaultHourlyRateMkd);
+                        }}
+                        className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${t.name}`}
+                        onClick={() =>
+                          setPendingConfirm({
+                            title: `Delete vehicle type "${t.name}"?`,
+                            description:
+                              'Vehicle types with assigned fleet vehicles cannot be deleted until those vehicles are reassigned.',
+                            confirmLabel: 'Delete Type',
+                            action: () => onDeleteType(t.id),
+                          })
+                        }
+                        className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -762,39 +853,124 @@ export function AdminPage({
           </form>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {stations.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-start justify-between rounded-lg border border-[#DDE2E8] bg-white p-5"
-              >
-                <div>
-                  <span className="tabular-nums text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
-                    {s.code} · {s.district}
-                  </span>
-                  <h3 className="mt-1 font-display text-xl text-[#0A1A33]">{s.name}</h3>
-                  <p className="mt-1 text-xs text-[#515F73]">{s.address}</p>
-                  <p className="tabular-nums mt-2 text-xs font-medium text-[#0A1A33]">
-                    Capacity: {s.capacity} docks
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Delete ${s.name}`}
-                  onClick={() =>
-                    setPendingConfirm({
-                      title: `Delete station "${s.name}"?`,
-                      description:
-                        'Stations that still hold docked vehicles cannot be deleted until those vehicles are moved.',
-                      confirmLabel: 'Delete Station',
-                      action: () => onDeleteStation(s.id),
-                    })
-                  }
-                  className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+            {stations.map((s) => {
+              const isEditing = editingStationId === s.id;
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+                  {isEditing ? (
+                    <div className="flex-1 space-y-2">
+                      <span className="tabular-nums text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+                        {s.code}
+                      </span>
+                      <input
+                        type="text"
+                        aria-label={`Edit name for ${s.name}`}
+                        value={editStationName}
+                        onChange={(e) => setEditStationName(e.target.value)}
+                        className="w-full rounded border border-[#0A1A33] bg-[#F6F7F9] px-2.5 py-1.5 text-sm font-medium text-[#0A1A33]"
+                      />
+                      <input
+                        type="text"
+                        aria-label={`Edit district for ${s.name}`}
+                        value={editStationDistrict}
+                        onChange={(e) => setEditStationDistrict(e.target.value)}
+                        className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs text-[#0A1A33]"
+                      />
+                      <input
+                        type="text"
+                        aria-label={`Edit address for ${s.name}`}
+                        value={editStationAddress}
+                        onChange={(e) => setEditStationAddress(e.target.value)}
+                        className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs text-[#0A1A33]"
+                      />
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="number"
+                          aria-label={`Edit dock capacity for ${s.name}`}
+                          min={2}
+                          value={editStationCapacity}
+                          onChange={(e) => setEditStationCapacity(Number(e.target.value))}
+                          className="tabular-nums w-20 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs text-[#0A1A33]"
+                        />
+                        <span className="text-xs text-[#515F73]">docks</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateStation(s.id, {
+                              name: editStationName.trim() || s.name,
+                              district: editStationDistrict.trim() || s.district,
+                              address: editStationAddress.trim() || s.address,
+                              capacity: Math.max(1, editStationCapacity),
+                            });
+                            setEditingStationId(null);
+                          }}
+                          className="ml-auto inline-flex items-center gap-1 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#1E2D4A]"
+                        >
+                          <Check className="h-3 w-3" />
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingStationId(null)}
+                          className="rounded border border-[#DDE2E8] px-2.5 py-1.5 text-[11px] text-[#515F73] hover:text-[#0A1A33]"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="tabular-nums text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+                        {s.code} · {s.district}
+                      </span>
+                      <h3 className="mt-1 font-display text-xl text-[#0A1A33]">{s.name}</h3>
+                      <p className="mt-1 text-xs text-[#515F73]">{s.address}</p>
+                      <p className="tabular-nums mt-2 text-xs font-medium text-[#0A1A33]">
+                        Capacity: {s.capacity} docks
+                      </p>
+                    </div>
+                  )}
+
+                  {!isEditing && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${s.name}`}
+                        onClick={() => {
+                          setEditingStationId(s.id);
+                          setEditStationName(s.name);
+                          setEditStationDistrict(s.district);
+                          setEditStationAddress(s.address);
+                          setEditStationCapacity(s.capacity);
+                        }}
+                        className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${s.name}`}
+                        onClick={() =>
+                          setPendingConfirm({
+                            title: `Delete station "${s.name}"?`,
+                            description:
+                              'Stations that still hold docked vehicles cannot be deleted until those vehicles are moved.',
+                            confirmLabel: 'Delete Station',
+                            action: () => onDeleteStation(s.id),
+                          })
+                        }
+                        className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

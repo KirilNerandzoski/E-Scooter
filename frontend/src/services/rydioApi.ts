@@ -161,6 +161,13 @@ export async function addVehicleTypeInApi(vt: Omit<VehicleType, 'id'>) {
   });
 }
 
+export async function updateVehicleTypeInApi(typeId: string, patch: Partial<VehicleType>) {
+  return apiFetch<VehicleType>(`/api/admin/types/${typeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
 export async function deleteVehicleTypeInApi(typeId: string) {
   return apiFetch<void>(`/api/admin/types/${typeId}`, { method: 'DELETE' });
 }
@@ -169,6 +176,13 @@ export async function addStationInApi(station: Omit<Station, 'id'>) {
   return apiFetch<Station>('/api/admin/stations', {
     method: 'POST',
     body: JSON.stringify(station),
+  });
+}
+
+export async function updateStationInApi(stationId: string, patch: Partial<Station>) {
+  return apiFetch<Station>(`/api/admin/stations/${stationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
   });
 }
 
