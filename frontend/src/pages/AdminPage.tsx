@@ -94,6 +94,9 @@ export function AdminPage({
 
   // Reservations filters
   const [resStatusFilter, setResStatusFilter] = useState<ReservationStatus | 'ALL'>('ALL');
+  const [resStationFilter, setResStationFilter] = useState<string>('ALL');
+  const [resFromDate, setResFromDate] = useState<string>('');
+  const [resToDate, setResToDate] = useState<string>('');
   const [resSearch, setResSearch] = useState('');
 
   // Add Vehicle form
@@ -141,12 +144,8 @@ export function AdminPage({
   const [userFormError, setUserFormError] = useState<string | null>(null);
 
   const totalRevenueMkd = useMemo(() => {
-    const historical = monthlyRevenue.reduce((sum, m) => sum + m.revenueMkd, 0);
-    const live = reservations
-      .filter((r) => r.status !== 'Cancelled')
-      .reduce((sum, r) => sum + r.totalPriceMkd + r.latePenaltyMkd, 0);
-    return historical + live;
-  }, [monthlyRevenue, reservations]);
+    return monthlyRevenue.reduce((sum, m) => sum + m.revenueMkd, 0);
+  }, [monthlyRevenue]);
 
   const popularVehicles = useMemo(() => {
     const counts = new Map<string, number>();
@@ -164,8 +163,22 @@ export function AdminPage({
   const maxMonthlyRevenue = Math.max(...monthlyRevenue.map((m) => m.revenueMkd), 1);
 
   const filteredReservations = useMemo(() => {
+    const fromMs = resFromDate ? new Date(`${resFromDate}T00:00:00`).getTime() : null;
+    const toMs = resToDate ? new Date(`${resToDate}T23:59:59`).getTime() : null;
+
     return reservations.filter((r) => {
       if (resStatusFilter !== 'ALL' && r.status !== resStatusFilter) return false;
+      if (
+        resStationFilter !== 'ALL' &&
+        r.pickupStationId !== resStationFilter &&
+        r.returnStationId !== resStationFilter
+      ) {
+        return false;
+      }
+      const startMs = new Date(r.startTime).getTime();
+      if (fromMs !== null && !Number.isNaN(fromMs) && startMs < fromMs) return false;
+      if (toMs !== null && !Number.isNaN(toMs) && startMs > toMs) return false;
+
       if (resSearch.trim()) {
         const q = resSearch.toLowerCase();
         const veh = vehicles.find((v) => v.id === r.vehicleId);
@@ -178,7 +191,7 @@ export function AdminPage({
       }
       return true;
     });
-  }, [reservations, resStatusFilter, resSearch, vehicles]);
+  }, [reservations, resStatusFilter, resStationFilter, resFromDate, resToDate, resSearch, vehicles]);
 
   const getStationName = (id?: string) => stations.find((s) => s.id === id)?.name ?? '—';
   const getTypeName = (id: string) => vehicleTypes.find((t) => t.id === id)?.name ?? '—';
@@ -978,20 +991,20 @@ export function AdminPage({
       {/* ALL RESERVATIONS */}
       {section === 'reservations' && (
         <div className="mt-8 space-y-5">
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
             <input
               type="search"
               aria-label="Search reservations"
-              placeholder="Search booking ID, customer, or vehicle..."
+              placeholder="Search ID, customer, vehicle..."
               value={resSearch}
               onChange={(e) => setResSearch(e.target.value)}
-              className="min-w-[260px] flex-1 rounded border border-[#DDE2E8] bg-white px-3.5 py-2 text-sm text-[#0A1A33]"
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
             />
             <select
               aria-label="Filter reservations by status"
               value={resStatusFilter}
               onChange={(e) => setResStatusFilter(e.target.value as ReservationStatus | 'ALL')}
-              className="rounded border border-[#DDE2E8] bg-white px-3.5 py-2 text-sm text-[#0A1A33]"
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
             >
               <option value="ALL">All Statuses</option>
               <option value="Reserved">Reserved</option>
@@ -999,6 +1012,54 @@ export function AdminPage({
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
+            <select
+              aria-label="Filter reservations by station"
+              value={resStationFilter}
+              onChange={(e) => setResStationFilter(e.target.value)}
+              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            >
+              <option value="ALL">All Stations</option>
+              {stations.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              aria-label="Filter reservations from date"
+              value={resFromDate}
+              onChange={(e) => setResFromDate(e.target.value)}
+              className="tabular-nums rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <div className="flex gap-2">
+              <input
+                type="date"
+                aria-label="Filter reservations to date"
+                value={resToDate}
+                onChange={(e) => setResToDate(e.target.value)}
+                className="tabular-nums min-w-0 flex-1 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              />
+              {(resSearch ||
+                resStatusFilter !== 'ALL' ||
+                resStationFilter !== 'ALL' ||
+                resFromDate ||
+                resToDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResSearch('');
+                    setResStatusFilter('ALL');
+                    setResStationFilter('ALL');
+                    setResFromDate('');
+                    setResToDate('');
+                  }}
+                  className="shrink-0 rounded border border-[#DDE2E8] bg-white px-2.5 py-2 text-xs font-medium text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-[#DDE2E8] bg-white">

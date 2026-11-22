@@ -51,7 +51,39 @@ public class CatalogController(RydioDbContext db) : ControllerBase
                         .OrderByDescending(x => x.CreatedAt)
                         .Select(x => (object)new { x.Id, x.Name, x.Email, x.Role, x.Active, x.CreatedAt })
                         .ToListAsync();
-                    monthlyRevenue = await db.MonthlyRevenue.OrderBy(m => m.SortOrder).ToListAsync();
+
+                    var baseMonths = await db.MonthlyRevenue.OrderBy(m => m.SortOrder).ToListAsync();
+                    var monthMap = baseMonths.ToDictionary(
+                        m => m.Month,
+                        m => new Models.MonthlyRevenueRecord
+                        {
+                            Month = m.Month,
+                            SortOrder = m.SortOrder,
+                            RevenueMkd = m.RevenueMkd,
+                            Rides = m.Rides,
+                        },
+                        StringComparer.OrdinalIgnoreCase);
+
+                    var nextOrder = baseMonths.Count + 1;
+                    foreach (var r in reservations.Where(x => x.Status != "Cancelled"))
+                    {
+                        var label = r.StartTime.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture);
+                        if (!monthMap.TryGetValue(label, out var bucket))
+                        {
+                            bucket = new Models.MonthlyRevenueRecord
+                            {
+                                Month = label,
+                                SortOrder = nextOrder++,
+                                RevenueMkd = 0,
+                                Rides = 0,
+                            };
+                            monthMap[label] = bucket;
+                        }
+                        bucket.RevenueMkd += r.TotalPriceMkd + r.LatePenaltyMkd;
+                        bucket.Rides += 1;
+                    }
+
+                    monthlyRevenue = monthMap.Values.OrderBy(m => m.SortOrder).ToList();
                 }
             }
         }
