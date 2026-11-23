@@ -1,14 +1,17 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 interface SuminagashiCanvasProps {
   className?: string;
+  /** Optional ref to hero copy container so ink lines flow edge-to-edge without overlapping text. */
+  safeZoneRef?: RefObject<HTMLElement | null>;
 }
 
 /**
- * Renders delicate feathered indigo suminagashi ink currents drifting across paper-white water.
- * Respects prefers-reduced-motion and gently reacts to pointer movement.
+ * Renders delicate feathered indigo suminagashi ink currents sweeping full-width
+ * from the right horizon all the way to the left navigation rail, while softly
+ * parting around the hero text block so typography always remains crystal clear.
  */
-export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
+export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -19,10 +22,10 @@ export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let animationId = 0;
-    let pointerX = 0.72;
-    let pointerY = 0.36;
-    let targetX = 0.72;
-    let targetY = 0.36;
+    let pointerX = 0.78;
+    let pointerY = 0.42;
+    let targetX = 0.78;
+    let targetY = 0.42;
     let time = 0;
 
     const resize = () => {
@@ -31,6 +34,7 @@ export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
       canvas.width = Math.max(1, Math.floor(rect.width * dpr));
       canvas.height = Math.max(1, Math.floor(rect.height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (reducedMotion) draw();
     };
 
     resize();
@@ -51,19 +55,33 @@ export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
       if (width === 0 || height === 0) return;
 
       ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = 'source-over';
 
       pointerX += (targetX - pointerX) * 0.035;
       pointerY += (targetY - pointerY) * 0.035;
 
-      const dropX = width * (0.76 + (pointerX - 0.72) * 0.08);
-      const dropY = height * (0.36 + (pointerY - 0.36) * 0.08);
+      const dropX = width * (0.78 + (pointerX - 0.78) * 0.06);
+      const dropY = height * (0.42 + (pointerY - 0.42) * 0.06);
 
-      // Flowing marbled ribbons sweeping diagonally across the upper-right basin
+      // Compute hero text safe-zone rectangle in canvas coordinates
+      let safeBox: { left: number; top: number; right: number; bottom: number } | null = null;
+      if (safeZoneRef?.current) {
+        const cRect = canvas.getBoundingClientRect();
+        const tRect = safeZoneRef.current.getBoundingClientRect();
+        safeBox = {
+          left: tRect.left - cRect.left,
+          top: tRect.top - cRect.top,
+          right: tRect.right - cRect.left,
+          bottom: tRect.bottom - cRect.top,
+        };
+      }
+
+      // Flowing marbled ribbons spanning full width (x = 0 at the HOME rail to x = width)
       const ribbonCount = 26;
       for (let i = 0; i < ribbonCount; i++) {
-        const ratio = i / ribbonCount;
-        const alpha = 0.035 + Math.sin(ratio * Math.PI) * 0.14;
-        const lineWidth = 0.7 + (i % 5 === 0 ? 1.5 : 0.45);
+        const ratio = i / (ribbonCount - 1);
+        const alpha = 0.045 + Math.sin(ratio * Math.PI) * 0.145;
+        const lineWidth = 0.7 + (i % 5 === 0 ? 1.4 : 0.45);
 
         ctx.beginPath();
         ctx.strokeStyle =
@@ -74,22 +92,24 @@ export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
               : `rgba(96, 109, 128, ${alpha * 0.9})`;
         ctx.lineWidth = lineWidth;
 
-        const baseOffset = (ratio - 0.5) * height * 0.92;
-        const steps = 64;
+        const baseOffset = (ratio - 0.5) * height * 0.94;
+        const steps = 80;
         for (let s = 0; s <= steps; s++) {
           const u = s / steps;
-          const x = width * (0.12 + u * 0.95);
-          const wave1 = Math.sin(u * 4.4 + time * 0.45 + ratio * 5.2) * (24 + ratio * 26);
-          const wave2 = Math.cos(u * 7.8 - time * 0.3 + ratio * 3.1) * 11;
+          const x = u * width;
 
-          // Gentle vortex pull around the ink drop point
-          let y = height * 0.38 + baseOffset + wave1 + wave2 - u * height * 0.14;
+          const wave1 = Math.sin(u * 4.6 + time * 0.42 + ratio * 5.0) * (20 + ratio * 22);
+          const wave2 = Math.cos(u * 8.0 - time * 0.28 + ratio * 3.1) * 9;
+
+          let y = height * 0.42 + baseOffset + wave1 + wave2 - (u - 0.5) * height * 0.12;
+
+          // Gentle vortex swirl around the ink drop point on the right
           const dx = x - dropX;
           const dy = y - dropY;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 170) {
-            const influence = Math.pow(1 - dist / 170, 2);
-            const swirl = Math.sin(dist * 0.045 - time * 0.6) * 18 * influence;
+          if (dist < 175) {
+            const influence = Math.pow(1 - dist / 175, 2);
+            const swirl = Math.sin(dist * 0.045 - time * 0.6) * 16 * influence;
             y += swirl + (dy / (dist + 1)) * 14 * influence;
           }
 
@@ -127,6 +147,31 @@ export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
       ctx.arc(dropX, dropY, 16, 0, Math.PI * 2);
       ctx.fill();
 
+      // Softly clear ONLY the hero text safe zone so lines reach the left HOME rail
+      // cleanly without ever overlapping the headline or paragraph copy.
+      if (safeBox) {
+        const padX = 28;
+        const padY = 18;
+        const cx = (safeBox.left + safeBox.right) / 2;
+        const cy = (safeBox.top + safeBox.bottom) / 2;
+        const rx = Math.max(80, (safeBox.right - safeBox.left) / 2 + padX);
+        const ry = Math.max(50, (safeBox.bottom - safeBox.top) / 2 + padY);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.translate(cx, cy);
+        ctx.scale(1, ry / rx);
+        const maskGrad = ctx.createRadialGradient(0, 0, rx * 0.72, 0, 0, rx * 1.18);
+        maskGrad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+        maskGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.92)');
+        maskGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = maskGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, rx * 1.18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       if (!reducedMotion) {
         time += 0.012;
         animationId = window.requestAnimationFrame(draw);
@@ -140,7 +185,7 @@ export function SuminagashiCanvas({ className = '' }: SuminagashiCanvasProps) {
       window.removeEventListener('pointermove', onPointerMove);
       if (animationId) window.cancelAnimationFrame(animationId);
     };
-  }, []);
+  }, [safeZoneRef]);
 
   return (
     <canvas

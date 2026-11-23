@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { ArrowRight, BatteryCharging, MapPin, ChevronRight, AlertCircle } from 'lucide-react';
 import type { Reservation, Station, Vehicle, VehicleType } from '../types/rydio';
 import { formatMkd, isVehicleAvailable, toLocalDateTimeInput, toSafeIso } from '../utils/pricing';
@@ -46,6 +47,7 @@ export function HomePage({
   onViewStations,
   onSelectVehicle,
 }: HomePageProps) {
+  const heroCopyRef = useRef<HTMLDivElement | null>(null);
   const startIso = toSafeIso(filterStart);
   const endIso = toSafeIso(filterEnd);
   const windowInvalid =
@@ -79,18 +81,14 @@ export function HomePage({
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Upper-right flowing Suminagashi indigo ink current */}
+      {/* Full-width flowing Suminagashi indigo ink currents reaching the left HOME rail without overlapping text */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[440px] overflow-hidden">
-        <SuminagashiCanvas className="h-full w-full opacity-95" />
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 bg-gradient-to-r from-[#F6F7F9] via-[#F6F7F9]/65 to-transparent"
-        />
+        <SuminagashiCanvas safeZoneRef={heroCopyRef} className="h-full w-full opacity-95" />
       </div>
 
       <div className="relative z-10 mx-auto max-w-[1120px] px-6 pb-14 pt-10 sm:px-10 lg:pt-14">
         {/* Hero Copy */}
-        <div className="max-w-2xl">
+        <div ref={heroCopyRef} className="max-w-2xl">
           <h1 className="font-display text-4xl font-light leading-[1.1] tracking-[-0.025em] text-[#0A1A33] sm:text-5xl lg:text-[3.5rem]">
             Move with the current.
             <br />
