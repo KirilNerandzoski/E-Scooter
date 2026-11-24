@@ -4,11 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Data;
 using Rydio.Api.Models;
+using Rydio.Api.Security;
 
 namespace Rydio.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Admin,SuperAdmin")]
+[Authorize(Policy = RbacPolicies.PolicyManageFleet)]
 [Route("api/[controller]")]
 public class AdminController(RydioDbContext db) : ControllerBase
 {
@@ -129,6 +130,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
     }
 
     // VEHICLE TYPES
+    [Authorize(Policy = RbacPolicies.PolicyManageTypes)]
     [HttpPost("types")]
     public async Task<IActionResult> AddType([FromBody] CreateTypeRequest req)
     {
@@ -152,6 +154,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
         return Ok(vt);
     }
 
+    [Authorize(Policy = RbacPolicies.PolicyManageTypes)]
     [HttpPatch("types/{id}")]
     public async Task<IActionResult> UpdateType(string id, [FromBody] UpdateTypeRequest req)
     {
@@ -174,6 +177,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
         return Ok(vt);
     }
 
+    [Authorize(Policy = RbacPolicies.PolicyManageTypes)]
     [HttpDelete("types/{id}")]
     public async Task<IActionResult> DeleteType(string id)
     {
@@ -188,6 +192,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
     }
 
     // STATIONS
+    [Authorize(Policy = RbacPolicies.PolicyManageStations)]
     [HttpPost("stations")]
     public async Task<IActionResult> AddStation([FromBody] CreateStationRequest req)
     {
@@ -219,6 +224,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
         return Ok(st);
     }
 
+    [Authorize(Policy = RbacPolicies.PolicyManageStations)]
     [HttpPatch("stations/{id}")]
     public async Task<IActionResult> UpdateStation(string id, [FromBody] UpdateStationRequest req)
     {
@@ -249,25 +255,27 @@ public class AdminController(RydioDbContext db) : ControllerBase
         return Ok(st);
     }
 
+    [Authorize(Policy = RbacPolicies.PolicyManageStations)]
     [HttpDelete("stations/{id}")]
     public async Task<IActionResult> DeleteStation(string id)
     {
         if (await db.Vehicles.AnyAsync(v => v.StationId == id))
-            return BadRequest(new { message = "Move docked vehicles to another station before deleting this station." });
+            return Conflict(new { message = "Move docked vehicles to another station before deleting this station." });
 
         var st = await db.Stations.FindAsync(id);
-        if (st is null) return NotFound();
+        if (st is null) return NotFound(new { message = "Station not found." });
         db.Stations.Remove(st);
         await db.SaveChangesAsync();
         return NoContent();
     }
 
     // RESERVATIONS OVERRIDE
+    [Authorize(Policy = RbacPolicies.PolicyManageReservations)]
     [HttpPatch("reservations/{id}/status")]
     public async Task<IActionResult> SetReservationStatus(string id, [FromBody] UpdateReservationStatusRequest req)
     {
         var res = await db.Reservations.FindAsync(id);
-        if (res is null) return NotFound();
+        if (res is null) return NotFound(new { message = "Reservation not found." });
         if (req.Status is not ("Reserved" or "Active" or "Completed" or "Cancelled"))
             return BadRequest(new { message = "Invalid status." });
 
@@ -276,19 +284,19 @@ public class AdminController(RydioDbContext db) : ControllerBase
         return Ok(res);
     }
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = RbacPolicies.PolicyDeleteReservations)]
     [HttpDelete("reservations/{id}")]
     public async Task<IActionResult> DeleteReservation(string id)
     {
         var res = await db.Reservations.FindAsync(id);
-        if (res is null) return NotFound();
+        if (res is null) return NotFound(new { message = "Reservation not found." });
         db.Reservations.Remove(res);
         await db.SaveChangesAsync();
         return NoContent();
     }
 
-    // SUPERADMIN USERS & ROLES
-    [Authorize(Roles = "SuperAdmin")]
+    // SUPERADMIN USERS & ROLES (RBAC CONTROL CENTER)
+    [Authorize(Policy = RbacPolicies.PolicyManageUsers)]
     [HttpPost("users")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
     {
@@ -300,15 +308,20 @@ public class AdminController(RydioDbContext db) : ControllerBase
             return BadRequest(new { message = "A valid email address is required." });
         if (string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 6)
             return BadRequest(new { message = "Password must be at least 6 characters." });
-        if (await db.Users.AnyAsync(u => u.Email == email))
+        if (RbacPolicies.IsPrimarySuperAdminEmail(email))
+            return Conflict(new { message = "The primary SuperAdmin email is reserved." });
+        if (await db.Users.AnyAsync(u => u.Email.ToLower() == email))
             return Conflict(new { message = $"An account with email \"{email}\" already exists." });
 
-        if (req.Role is not ("Customer" or "Admin" or "SuperAdmin"))
-            return BadRequest(new { message = "Invalid role." });
+        if (string.Equals(req.Role, RbacPolicies.RoleSuperAdmin, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Only superadmin@rydio.mk can hold the SuperAdmin role. Assign Customer or Admin." });
+
+        if (req.Role is not ("Customer" or "Admin"))
+            return BadRequest(new { message = "Role must be Customer or Admin." });
 
         var user = new User
         {
-            Name = req.Name.Trim(),
+            Name = name,
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Role = req.Role,
@@ -317,49 +330,87 @@ public class AdminController(RydioDbContext db) : ControllerBase
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        return Ok(new { user.Id, user.Name, user.Email, user.Role, user.Active, user.CreatedAt });
+        return Ok(new
+        {
+            user.Id,
+            user.Name,
+            user.Email,
+            user.Role,
+            Permissions = RbacPolicies.GetPermissionsForRole(user.Role),
+            user.Active,
+            user.CreatedAt
+        });
     }
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = RbacPolicies.PolicyManageUsers)]
     [HttpPatch("users/{id}/role")]
     public async Task<IActionResult> UpdateUserRole(string id, [FromBody] UpdateUserRoleRequest req)
     {
         var selfId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (id == selfId) return BadRequest(new { message = "You cannot change your own role." });
+        if (id == selfId) return BadRequest(new { message = "You cannot change your own SuperAdmin role." });
 
         var user = await db.Users.FindAsync(id);
-        if (user is null) return NotFound();
-        if (req.Role is not ("Customer" or "Admin" or "SuperAdmin"))
-            return BadRequest(new { message = "Invalid role." });
+        if (user is null) return NotFound(new { message = "User account not found." });
+        if (RbacPolicies.IsPrimarySuperAdminEmail(user.Email))
+            return BadRequest(new { message = "The primary SuperAdmin account role cannot be modified." });
+
+        if (string.Equals(req.Role, RbacPolicies.RoleSuperAdmin, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Only superadmin@rydio.mk can hold the SuperAdmin role." });
+
+        if (req.Role is not ("Customer" or "Admin"))
+            return BadRequest(new { message = "Assignable roles are Customer or Admin." });
 
         user.Role = req.Role;
         await db.SaveChangesAsync();
-        return Ok(new { user.Id, user.Name, user.Email, user.Role, user.Active, user.CreatedAt });
+        return Ok(new
+        {
+            user.Id,
+            user.Name,
+            user.Email,
+            user.Role,
+            Permissions = RbacPolicies.GetPermissionsForRole(user.Role),
+            user.Active,
+            user.CreatedAt
+        });
     }
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = RbacPolicies.PolicyManageUsers)]
     [HttpPatch("users/{id}/active")]
     public async Task<IActionResult> UpdateUserActive(string id, [FromBody] UpdateUserActiveRequest req)
     {
         var selfId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (id == selfId) return BadRequest(new { message = "You cannot suspend your own account." });
+        if (id == selfId) return BadRequest(new { message = "You cannot suspend your own SuperAdmin account." });
 
         var user = await db.Users.FindAsync(id);
-        if (user is null) return NotFound();
+        if (user is null) return NotFound(new { message = "User account not found." });
+        if (RbacPolicies.IsPrimarySuperAdminEmail(user.Email))
+            return BadRequest(new { message = "The primary SuperAdmin account cannot be suspended." });
+
         user.Active = req.Active;
         await db.SaveChangesAsync();
-        return Ok(new { user.Id, user.Name, user.Email, user.Role, user.Active, user.CreatedAt });
+        return Ok(new
+        {
+            user.Id,
+            user.Name,
+            user.Email,
+            Role = RbacPolicies.NormalizeRole(user.Email, user.Role),
+            user.Active,
+            user.CreatedAt
+        });
     }
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = RbacPolicies.PolicyManageUsers)]
     [HttpDelete("users/{id}")]
     public async Task<IActionResult> DeleteUser(string id)
     {
         var selfId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (id == selfId) return BadRequest(new { message = "You cannot delete your own account." });
+        if (id == selfId) return BadRequest(new { message = "You cannot delete your own SuperAdmin account." });
 
         var user = await db.Users.FindAsync(id);
-        if (user is null) return NotFound();
+        if (user is null) return NotFound(new { message = "User account not found." });
+        if (RbacPolicies.IsPrimarySuperAdminEmail(user.Email))
+            return BadRequest(new { message = "The primary SuperAdmin account cannot be deleted." });
+
         db.Users.Remove(user);
         await db.SaveChangesAsync();
         return NoContent();

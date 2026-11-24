@@ -4,12 +4,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Data;
 using Rydio.Api.Models;
+using Rydio.Api.Security;
 using Rydio.Api.Services;
 
 namespace Rydio.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = RbacPolicies.PolicyOwnReservations)]
 [Route("api/[controller]")]
 public class ReservationsController(RydioDbContext db) : ControllerBase
 {
@@ -113,9 +114,8 @@ public class ReservationsController(RydioDbContext db) : ControllerBase
         if (!IsOwnerOrAdmin(res)) return Forbid();
         if (res.Status != "Reserved") return BadRequest(new { message = "Only Reserved bookings can be cancelled." });
 
-        var role = User.FindFirstValue(ClaimTypes.Role);
-        var isAdmin = role is "Admin" or "SuperAdmin";
-        if (!isAdmin && (res.StartTime - DateTimeOffset.UtcNow) < TimeSpan.FromHours(1))
+        var canManageAll = User.HasClaim(RbacPolicies.PermissionClaimType, RbacPolicies.PermReservationsManage);
+        if (!canManageAll && (res.StartTime - DateTimeOffset.UtcNow) < TimeSpan.FromHours(1))
             return BadRequest(new { message = "Cancellation is only allowed up to 1 hour before start time." });
 
         res.Status = "Cancelled";
@@ -126,7 +126,10 @@ public class ReservationsController(RydioDbContext db) : ControllerBase
     private bool IsOwnerOrAdmin(Reservation res)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var role = User.FindFirstValue(ClaimTypes.Role);
-        return res.UserId == userId || role is "Admin" or "SuperAdmin";
+        var email = User.FindFirstValue(ClaimTypes.Email);
+        var canManageAll = User.HasClaim(RbacPolicies.PermissionClaimType, RbacPolicies.PermReservationsManage);
+        return canManageAll ||
+               (!string.IsNullOrEmpty(userId) && res.UserId == userId) ||
+               (!string.IsNullOrEmpty(email) && string.Equals(res.CustomerEmail, email, StringComparison.OrdinalIgnoreCase));
     }
 }

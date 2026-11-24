@@ -2,12 +2,25 @@ export type UserRole = 'Guest' | 'Customer' | 'Admin' | 'SuperAdmin';
 
 export type AccountRole = 'Customer' | 'Admin' | 'SuperAdmin';
 
+export type RbacPermission =
+  | 'catalog:read'
+  | 'reservations:own'
+  | 'reports:view'
+  | 'fleet:manage'
+  | 'types:manage'
+  | 'stations:manage'
+  | 'reservations:manage'
+  | 'reservations:delete'
+  | 'users:manage'
+  | 'roles:assign';
+
 export interface UserAccount {
   id: string;
   name: string;
   email: string;
   password: string;
   role: AccountRole;
+  permissions?: RbacPermission[];
   active: boolean;
   createdAt: string;
 }

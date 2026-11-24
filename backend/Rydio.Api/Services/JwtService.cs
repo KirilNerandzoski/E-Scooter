@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using Rydio.Api.Models;
+using Rydio.Api.Security;
 
 namespace Rydio.Api.Services;
 
@@ -16,15 +17,21 @@ public class JwtService(IConfiguration config)
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var effectiveRole = RbacPolicies.NormalizeRole(user.Email, user.Role);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id),
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Name, user.Name),
-            new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role),
+            new(JwtRegisteredClaimNames.Sub, user.Id),
+            new(ClaimTypes.NameIdentifier, user.Id),
+            new(ClaimTypes.Name, user.Name),
+            new(ClaimTypes.Email, user.Email),
+            new(ClaimTypes.Role, effectiveRole),
         };
+
+        foreach (var perm in RbacPolicies.GetPermissionsForRole(effectiveRole))
+        {
+            claims.Add(new Claim(RbacPolicies.PermissionClaimType, perm));
+        }
 
         var token = new JwtSecurityToken(
             issuer: "rydio-api",

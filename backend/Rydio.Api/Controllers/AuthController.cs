@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Data;
 using Rydio.Api.Models;
+using Rydio.Api.Security;
 using Rydio.Api.Services;
 
 namespace Rydio.Api.Controllers;
@@ -43,19 +44,19 @@ public class AuthController(RydioDbContext db, JwtService jwt) : ControllerBase
         if (!email.Contains('@')) return BadRequest(new { message = "Valid email is required." });
         if (req.Password.Length < 6) return BadRequest(new { message = "Password must be at least 6 characters." });
 
-        if (await db.Users.AnyAsync(u => u.Email == email))
+        if (RbacPolicies.IsPrimarySuperAdminEmail(email))
+            return Conflict(new { message = "This email is reserved for the system SuperAdmin." });
+
+        if (await db.Users.AnyAsync(u => u.Email.ToLower() == email))
             return Conflict(new { message = "An account with this email already exists." });
 
-        var role = email is "superadmin@rydio.mk" or "kiril.nerandz99@gmail.com"
-            ? "SuperAdmin"
-            : "Customer";
-
+        // RBAC rule: every newly registered user strictly starts as Customer.
         var user = new User
         {
             Name = name,
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
-            Role = role,
+            Role = RbacPolicies.RoleCustomer,
             Active = true,
         };
 
@@ -79,13 +80,18 @@ public class AuthController(RydioDbContext db, JwtService jwt) : ControllerBase
         return Ok(ToUserDto(user));
     }
 
-    private static object ToUserDto(User u) => new
+    private static object ToUserDto(User u)
     {
-        id = u.Id,
-        name = u.Name,
-        email = u.Email,
-        role = u.Role,
-        active = u.Active,
-        createdAt = u.CreatedAt
-    };
+        var effectiveRole = RbacPolicies.NormalizeRole(u.Email, u.Role);
+        return new
+        {
+            id = u.Id,
+            name = u.Name,
+            email = u.Email,
+            role = effectiveRole,
+            permissions = RbacPolicies.GetPermissionsForRole(effectiveRole),
+            active = u.Active,
+            createdAt = u.CreatedAt
+        };
+    }
 }

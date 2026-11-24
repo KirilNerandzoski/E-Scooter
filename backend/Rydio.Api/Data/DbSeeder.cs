@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Models;
+using Rydio.Api.Security;
 
 namespace Rydio.Api.Data;
 
@@ -54,9 +55,9 @@ public static class DbSeeder
                 {
                     Id = "usr-superadmin",
                     Name = "Rydio SuperAdmin",
-                    Email = "superadmin@rydio.mk",
+                    Email = RbacPolicies.SuperAdminEmail,
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("SuperAdmin123!"),
-                    Role = "SuperAdmin",
+                    Role = RbacPolicies.RoleSuperAdmin,
                     Active = true,
                 },
                 new User
@@ -65,10 +66,48 @@ public static class DbSeeder
                     Name = "Kiril Petrov",
                     Email = "kiril@rydio.mk",
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("Customer123!"),
-                    Role = "Customer",
+                    Role = RbacPolicies.RoleCustomer,
                     Active = true,
                 }
             );
+            await db.SaveChangesAsync();
+        }
+        else
+        {
+            // Enforce RBAC invariants on existing databases:
+            // 1. Ensure primary SuperAdmin (superadmin@rydio.mk) exists, is Active, and holds SuperAdmin.
+            var superAdmin = await db.Users.FirstOrDefaultAsync(u =>
+                u.Email.ToLower() == RbacPolicies.SuperAdminEmail);
+
+            if (superAdmin is null)
+            {
+                db.Users.Add(new User
+                {
+                    Id = "usr-superadmin",
+                    Name = "Rydio SuperAdmin",
+                    Email = RbacPolicies.SuperAdminEmail,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("SuperAdmin123!"),
+                    Role = RbacPolicies.RoleSuperAdmin,
+                    Active = true,
+                });
+            }
+            else
+            {
+                superAdmin.Role = RbacPolicies.RoleSuperAdmin;
+                superAdmin.Active = true;
+            }
+
+            // 2. Demote any non-primary account that previously held SuperAdmin back to Customer.
+            var extraSuperAdmins = await db.Users
+                .Where(u => u.Role == RbacPolicies.RoleSuperAdmin &&
+                            u.Email.ToLower() != RbacPolicies.SuperAdminEmail)
+                .ToListAsync();
+
+            foreach (var u in extraSuperAdmins)
+            {
+                u.Role = RbacPolicies.RoleCustomer;
+            }
+
             await db.SaveChangesAsync();
         }
 

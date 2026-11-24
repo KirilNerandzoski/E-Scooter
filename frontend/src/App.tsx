@@ -21,6 +21,7 @@ import {
 import type {
   AccountRole,
   MonthlyRevenuePoint,
+  RbacPermission,
   Reservation,
   ReservationStatus,
   Station,
@@ -28,6 +29,13 @@ import type {
   Vehicle,
   VehicleType,
 } from './types/rydio';
+import {
+  canAccessAdminPanel,
+  hasPermission,
+  isPrimarySuperAdminEmail,
+  normalizeUserRole,
+  sanitizeUsersRbac,
+} from './utils/rbac';
 import {
   formatWindowDuration,
   isVehicleAvailable,
@@ -104,7 +112,7 @@ export function App() {
   }, []);
 
   const [users, setUsers] = useState<UserAccount[]>(() =>
-    loadState('rydio_users_v1', INITIAL_USERS)
+    sanitizeUsersRbac(loadState('rydio_users_v1', INITIAL_USERS))
   );
   const [currentUserId, setCurrentUserId] = useState<string | null>(() =>
     loadState<string | null>('rydio_session_uid_v1', null)
@@ -176,8 +184,15 @@ export function App() {
       setVehicles(data.vehicles);
       setReservations(data.reservations);
       setBusyWindows(data.busyWindows);
-      setApiCurrentUser(data.currentUser);
-      if (data.users.length > 0) setUsers(data.users);
+      setApiCurrentUser(
+        data.currentUser
+          ? {
+              ...data.currentUser,
+              role: normalizeUserRole(data.currentUser.email, data.currentUser.role),
+            }
+          : null
+      );
+      if (data.users.length > 0) setUsers(sanitizeUsersRbac(data.users));
       if (data.monthlyRevenue.length > 0) setMonthlyRevenue(data.monthlyRevenue);
       setApiLive(true);
       setSyncStatus('live');
@@ -497,8 +512,24 @@ export function App() {
     showToast(`Reservation ${reservationId} cancelled.`);
   };
 
+  // RBAC guard helper — blocks unauthorized mutations and surfaces crimson toast
+  const requirePermission = useCallback(
+    (perm: RbacPermission): boolean => {
+      if (!hasPermission(currentUser, perm)) {
+        showToast(
+          'Access denied: your account role does not have permission to modify the website.',
+          'error'
+        );
+        return false;
+      }
+      return true;
+    },
+    [currentUser, showToast]
+  );
+
   // Admin & SuperAdmin handlers
   const handleToggleMaintenance = async (vehicleId: string) => {
+    if (!requirePermission('fleet:manage')) return;
     const target = vehicles.find((v) => v.id === vehicleId);
     if (!target) return;
     if (apiLive) {
@@ -526,6 +557,7 @@ export function App() {
   };
 
   const handleAddVehicle = async (veh: Omit<Vehicle, 'id'>): Promise<boolean> => {
+    if (!requirePermission('fleet:manage')) return false;
     const codeNorm = veh.code.trim().toLowerCase();
     const nameNorm = veh.name.trim().toLowerCase();
     if (vehicles.some((v) => v.code.trim().toLowerCase() === codeNorm)) {
@@ -558,6 +590,7 @@ export function App() {
     vehicleId: string,
     patch: Partial<Vehicle>
   ): Promise<boolean> => {
+    if (!requirePermission('fleet:manage')) return false;
     if (patch.code) {
       const codeNorm = patch.code.trim().toLowerCase();
       if (vehicles.some((v) => v.id !== vehicleId && v.code.trim().toLowerCase() === codeNorm)) {
@@ -590,6 +623,7 @@ export function App() {
   };
 
   const handleDeleteVehicle = async (vehicleId: string) => {
+    if (!requirePermission('fleet:manage')) return;
     const target = vehicles.find((v) => v.id === vehicleId);
     if (apiLive) {
       try {
@@ -616,6 +650,7 @@ export function App() {
   };
 
   const handleAddType = async (vt: Omit<VehicleType, 'id'>): Promise<boolean> => {
+    if (!requirePermission('types:manage')) return false;
     const nameNorm = vt.name.trim().toLowerCase();
     if (vehicleTypes.some((t) => t.name.trim().toLowerCase() === nameNorm)) {
       showToast(`Vehicle type "${vt.name.trim()}" already exists.`, 'error');
@@ -642,6 +677,7 @@ export function App() {
     typeId: string,
     patch: Partial<VehicleType>
   ): Promise<boolean> => {
+    if (!requirePermission('types:manage')) return false;
     if (patch.name) {
       const nameNorm = patch.name.trim().toLowerCase();
       if (
@@ -669,6 +705,7 @@ export function App() {
   };
 
   const handleDeleteType = async (typeId: string) => {
+    if (!requirePermission('types:manage')) return;
     const inUse = vehicles.some((v) => v.typeId === typeId);
     if (inUse) {
       showToast('Cannot delete type while vehicles are still assigned to it.', 'error');
@@ -689,6 +726,7 @@ export function App() {
   };
 
   const handleAddStation = async (st: Omit<Station, 'id'>): Promise<boolean> => {
+    if (!requirePermission('stations:manage')) return false;
     const codeNorm = st.code.trim().toLowerCase();
     const nameNorm = st.name.trim().toLowerCase();
     if (stations.some((s) => s.code.trim().toLowerCase() === codeNorm)) {
@@ -720,6 +758,7 @@ export function App() {
     stationId: string,
     patch: Partial<Station>
   ): Promise<boolean> => {
+    if (!requirePermission('stations:manage')) return false;
     if (patch.code) {
       const codeNorm = patch.code.trim().toLowerCase();
       if (stations.some((s) => s.id !== stationId && s.code.trim().toLowerCase() === codeNorm)) {
@@ -752,6 +791,7 @@ export function App() {
   };
 
   const handleDeleteStation = async (stationId: string) => {
+    if (!requirePermission('stations:manage')) return;
     const hasDocked = vehicles.some((v) => v.stationId === stationId);
     if (hasDocked) {
       showToast('Move docked vehicles to another station before deleting this station.', 'error');
@@ -775,6 +815,7 @@ export function App() {
     reservationId: string,
     status: ReservationStatus
   ) => {
+    if (!requirePermission('reservations:manage')) return;
     if (apiLive) {
       try {
         await adminSetReservationStatusInApi(reservationId, status);
@@ -792,6 +833,7 @@ export function App() {
   };
 
   const handleDeleteReservation = async (reservationId: string) => {
+    if (!requirePermission('reservations:delete')) return;
     if (apiLive) {
       try {
         await deleteReservationInApi(reservationId);
@@ -809,7 +851,15 @@ export function App() {
   const handleCreateUser = async (
     user: Omit<UserAccount, 'id' | 'createdAt'>
   ): Promise<boolean> => {
+    if (!requirePermission('users:manage')) return false;
     const emailNorm = user.email.trim().toLowerCase();
+    if (isPrimarySuperAdminEmail(emailNorm) || user.role === 'SuperAdmin') {
+      showToast(
+        'Only superadmin@rydio.mk can hold the SuperAdmin role. Assign Customer or Admin.',
+        'error'
+      );
+      return false;
+    }
     if (users.some((u) => u.email.trim().toLowerCase() === emailNorm)) {
       showToast(`An account with email "${emailNorm}" already exists.`, 'error');
       return false;
@@ -837,6 +887,16 @@ export function App() {
   };
 
   const handleUpdateUserRole = async (userId: string, nextRole: AccountRole) => {
+    if (!requirePermission('roles:assign')) return;
+    const target = users.find((u) => u.id === userId);
+    if (target && isPrimarySuperAdminEmail(target.email)) {
+      showToast('The primary SuperAdmin account role cannot be modified.', 'error');
+      return;
+    }
+    if (nextRole === 'SuperAdmin') {
+      showToast('Only superadmin@rydio.mk can hold the SuperAdmin role.', 'error');
+      return;
+    }
     if (apiLive) {
       try {
         await updateUserRoleInApi(userId, nextRole);
@@ -852,8 +912,13 @@ export function App() {
   };
 
   const handleToggleUserActive = async (userId: string) => {
+    if (!requirePermission('users:manage')) return;
     const target = users.find((u) => u.id === userId);
     if (!target) return;
+    if (isPrimarySuperAdminEmail(target.email)) {
+      showToast('The primary SuperAdmin account cannot be suspended.', 'error');
+      return;
+    }
     if (apiLive) {
       try {
         await updateUserActiveInApi(userId, !target.active);
@@ -869,6 +934,12 @@ export function App() {
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if (!requirePermission('users:manage')) return;
+    const target = users.find((u) => u.id === userId);
+    if (target && isPrimarySuperAdminEmail(target.email)) {
+      showToast('The primary SuperAdmin account cannot be deleted.', 'error');
+      return;
+    }
     if (apiLive) {
       try {
         await deleteUserInApi(userId);
@@ -884,6 +955,7 @@ export function App() {
   };
 
   const handleResetSystemData = () => {
+    if (!requirePermission('fleet:manage')) return;
     if (apiLive) {
       void syncFromApi();
       showToast('Synced latest state from .NET 10 PostgreSQL API.');
@@ -893,8 +965,7 @@ export function App() {
     setVehicleTypes(INITIAL_VEHICLE_TYPES);
     setVehicles(INITIAL_VEHICLES);
     setReservations(INITIAL_RESERVATIONS);
-    setUsers(INITIAL_USERS);
-    setCurrentUserId('usr-superadmin');
+    setUsers(sanitizeUsersRbac(INITIAL_USERS));
     showToast('System demo data restored to defaults.');
   };
 
@@ -902,8 +973,7 @@ export function App() {
     ? vehicles.find((v) => v.id === returningReservation.vehicleId)
     : undefined;
 
-  const isPrivileged =
-    currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const isPrivileged = canAccessAdminPanel(currentUser);
   const showTelemetry = activeTab !== 'admin' && activeTab !== 'my-rides';
 
   return (
@@ -1033,20 +1103,23 @@ export function App() {
         {activeTab === 'admin' && (!isPrivileged || !currentUser) && (
           <div className="mx-auto max-w-[680px] px-6 py-24 text-center">
             <h1 className="font-display text-2xl font-light text-[#0A1A33]">
-              Administrator access required
+              Restricted by Role-Based Access Control
             </h1>
             <p className="mt-2 text-sm text-[#5A6A82]">
-              Sign in with an Admin or SuperAdmin account to manage fleet vehicles, stations, and
-              revenue reports.
+              {currentUser
+                ? `Your account (${currentUser.email}) has the ${currentUser.role} role, which can browse the catalog and manage personal rides only. Website and fleet modifications are restricted.`
+                : 'Sign in with the SuperAdmin account to manage fleet vehicles, stations, reservations, and user roles.'}
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setAuthModalMode('login')}
-                className="rounded-md bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-[#13294B]"
-              >
-                SIGN IN
-              </button>
+              {!currentUser && (
+                <button
+                  type="button"
+                  onClick={() => setAuthModalMode('login')}
+                  className="rounded-md bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-[#13294B]"
+                >
+                  SIGN IN
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setActiveTab('home')}

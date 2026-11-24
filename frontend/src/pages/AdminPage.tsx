@@ -24,6 +24,13 @@ import type {
   VehicleType,
 } from '../types/rydio';
 import { formatMkd, formatShortDateTime } from '../utils/pricing';
+import {
+  ASSIGNABLE_ROLES,
+  hasPermission,
+  isPrimarySuperAdmin,
+  isPrimarySuperAdminEmail,
+  SUPERADMIN_EMAIL,
+} from '../utils/rbac';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 interface AdminPageProps {
@@ -92,7 +99,9 @@ export function AdminPage({
   onDeleteUser,
   onResetSystemData,
 }: AdminPageProps) {
-  const isSuperAdmin = currentUser.role === 'SuperAdmin';
+  const isSuperAdmin =
+    isPrimarySuperAdmin(currentUser) && hasPermission(currentUser, 'users:manage');
+  const canDeleteReservations = hasPermission(currentUser, 'reservations:delete');
   const [section, setSection] = useState<AdminSection>('dashboard');
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
 
@@ -1339,7 +1348,7 @@ export function AdminPage({
                               </button>
                             </>
                           )}
-                          {isSuperAdmin && (
+                          {canDeleteReservations && (
                             <button
                               type="button"
                               aria-label={`Delete reservation ${r.id} permanently`}
@@ -1369,9 +1378,59 @@ export function AdminPage({
         </div>
       )}
 
-      {/* SUPERADMIN USERS & ROLES */}
+      {/* SUPERADMIN USERS & ROLES (RBAC CONTROL CENTER) */}
       {section === 'users' && isSuperAdmin && (
         <div className="mt-8 space-y-6">
+          <div className="rounded-lg border border-[#DDE2E8] bg-white p-5">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[#0A1A33]" />
+              <h2 className="font-display text-lg font-medium text-[#0A1A33]">
+                Role-Based Access Control (RBAC) Policy
+              </h2>
+            </div>
+            <p className="mt-1 text-xs text-[#515F73]">
+              Only <strong className="text-[#0A1A33]">{SUPERADMIN_EMAIL}</strong> holds the locked{' '}
+              <strong className="text-[#0A1A33]">SuperAdmin</strong> role with unrestricted control.
+              Every newly registered user starts as a <strong className="text-[#0A1A33]">Customer</strong>{' '}
+              with zero website modification rights.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded border border-[#DDE2E8] bg-[#F6F7F9] p-3">
+                <p className="text-[11px] font-semibold tracking-[0.12em] text-[#515F73]">GUEST</p>
+                <p className="mt-1 text-xs text-[#0A1A33]">
+                  Browse catalog, station map, and live window availability only.
+                </p>
+              </div>
+              <div className="rounded border border-[#DDE2E8] bg-[#F6F7F9] p-3">
+                <p className="text-[11px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+                  CUSTOMER (DEFAULT)
+                </p>
+                <p className="mt-1 text-xs text-[#0A1A33]">
+                  All new sign-ups start here. Book, pick up, return, and cancel own rides only —
+                  cannot modify the website.
+                </p>
+              </div>
+              <div className="rounded border border-[#DDE2E8] bg-[#F6F7F9] p-3">
+                <p className="text-[11px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+                  ADMIN (DELEGATED)
+                </p>
+                <p className="mt-1 text-xs text-[#0A1A33]">
+                  Granted only by SuperAdmin. Manages fleet, stations, types, and booking statuses;
+                  cannot manage users or delete records.
+                </p>
+              </div>
+              <div className="rounded border border-[#0A1A33]/30 bg-white p-3">
+                <p className="text-[11px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+                  SUPERADMIN (SINGLETON)
+                </p>
+                <p className="mt-1 text-xs text-[#0A1A33]">
+                  Exclusive to {SUPERADMIN_EMAIL}. Full permission over fleet, stations, types,
+                  reservations, reports, and user roles.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <form
             noValidate
             onSubmit={(e) => void handleCreateUser(e)}
@@ -1420,9 +1479,11 @@ export function AdminPage({
                 onChange={(e) => setNewUserRole(e.target.value as AccountRole)}
                 className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
               >
-                <option value="Customer">Customer</option>
-                <option value="Admin">Admin</option>
-                <option value="SuperAdmin">SuperAdmin</option>
+                {ASSIGNABLE_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
               </select>
               <button
                 type="submit"
@@ -1447,6 +1508,7 @@ export function AdminPage({
               <tbody className="divide-y divide-[#DDE2E8]">
                 {users.map((u) => {
                   const isSelf = u.id === currentUser.id;
+                  const isLockedSuperAdmin = isPrimarySuperAdminEmail(u.email);
                   return (
                     <tr key={u.id} className="hover:bg-[#F6F7F9]/60">
                       <td className="px-4 py-3.5">
@@ -1459,28 +1521,37 @@ export function AdminPage({
                         <p className="text-xs text-[#515F73]">{u.email}</p>
                       </td>
                       <td className="px-4 py-3.5">
-                        <select
-                          aria-label={`Role for ${u.name}`}
-                          disabled={isSelf}
-                          value={u.role}
-                          onChange={(e) => {
-                            const nextRole = e.target.value as AccountRole;
-                            setPendingConfirm({
-                              title: `Change ${u.name}'s role to ${nextRole}?`,
-                              description:
-                                nextRole === 'SuperAdmin'
-                                  ? `Granting SuperAdmin gives ${u.email} unrestricted control over all users, roles, fleet, and reservations.`
-                                  : `This updates ${u.email} from ${u.role} to ${nextRole}.`,
-                              confirmLabel: `Set ${nextRole}`,
-                              action: () => onUpdateUserRole(u.id, nextRole),
-                            });
-                          }}
-                          className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-50"
-                        >
-                          <option value="Customer">Customer</option>
-                          <option value="Admin">Admin</option>
-                          <option value="SuperAdmin">SuperAdmin</option>
-                        </select>
+                        {isLockedSuperAdmin ? (
+                          <span className="inline-flex items-center gap-1.5 rounded border border-[#0A1A33] bg-[#0A1A33] px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-white">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            SUPERADMIN (LOCKED)
+                          </span>
+                        ) : (
+                          <select
+                            aria-label={`Role for ${u.name}`}
+                            disabled={isSelf}
+                            value={u.role === 'Admin' ? 'Admin' : 'Customer'}
+                            onChange={(e) => {
+                              const nextRole = e.target.value as AccountRole;
+                              setPendingConfirm({
+                                title: `Change ${u.name}'s role to ${nextRole}?`,
+                                description:
+                                  nextRole === 'Admin'
+                                    ? `Granting Admin allows ${u.email} to manage fleet vehicles, stations, types, and reservations.`
+                                    : `Setting ${u.email} to Customer revokes all website and fleet modification permissions.`,
+                                confirmLabel: `Set ${nextRole}`,
+                                action: () => onUpdateUserRole(u.id, nextRole),
+                              });
+                            }}
+                            className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-50"
+                          >
+                            {ASSIGNABLE_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-3.5">
                         {u.active ? (
@@ -1497,7 +1568,7 @@ export function AdminPage({
                         <div className="inline-flex items-center gap-2">
                           <button
                             type="button"
-                            disabled={isSelf}
+                            disabled={isSelf || isLockedSuperAdmin}
                             onClick={() => onToggleUserActive(u.id)}
                             className="rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#0A1A33] hover:border-[#0A1A33] disabled:opacity-40"
                           >
@@ -1505,7 +1576,7 @@ export function AdminPage({
                           </button>
                           <button
                             type="button"
-                            disabled={isSelf}
+                            disabled={isSelf || isLockedSuperAdmin}
                             aria-label={`Delete ${u.name}`}
                             onClick={() =>
                               setPendingConfirm({

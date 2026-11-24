@@ -3,6 +3,7 @@ import { X, AlertCircle, ShieldCheck, ArrowRight } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
 import { Modal } from './Modal';
 import { loginWithApi, registerWithApi } from '../services/rydioApi';
+import { isPrimarySuperAdminEmail, ROLE_PERMISSIONS } from '../utils/rbac';
 
 interface AuthModalProps {
   initialMode?: 'login' | 'register';
@@ -87,20 +88,24 @@ export function AuthModal({
       return;
     }
 
+    if (isPrimarySuperAdminEmail(normalizedEmail)) {
+      setError('This email is reserved for the system SuperAdmin. Sign in instead.');
+      return;
+    }
+
     if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
       setError('An account with this email already exists. Sign in instead.');
       return;
     }
 
+    // RBAC rule: all newly registered users strictly start as Customer.
     const newUser: UserAccount = {
       id: `usr-${Date.now()}`,
       name: name.trim(),
       email: normalizedEmail,
       password,
-      role:
-        normalizedEmail === 'superadmin@rydio.mk' || normalizedEmail === 'kiril.nerandz99@gmail.com'
-          ? 'SuperAdmin'
-          : 'Customer',
+      role: 'Customer',
+      permissions: [...ROLE_PERMISSIONS.Customer],
       active: true,
       createdAt: new Date().toISOString(),
     };

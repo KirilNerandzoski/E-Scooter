@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Data;
+using Rydio.Api.Security;
 
 namespace Rydio.Api.Controllers;
 
@@ -13,13 +14,28 @@ public class CatalogController(RydioDbContext db) : ControllerBase
     public async Task<IActionResult> Bootstrap()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var role = User.FindFirstValue(ClaimTypes.Role);
-        var isPrivileged = role is "Admin" or "SuperAdmin";
+        Models.User? liveUser = null;
+        string? effectiveRole = null;
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            var found = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == userId);
+            if (found is not null && found.Active)
+            {
+                liveUser = found;
+                effectiveRole = RbacPolicies.NormalizeRole(found.Email, found.Role);
+            }
+        }
+
+        var canManageFleet = RbacPolicies.HasPermission(effectiveRole, RbacPolicies.PermFleetManage);
+        var canManageReservations = RbacPolicies.HasPermission(effectiveRole, RbacPolicies.PermReservationsManage);
+        var canViewReports = RbacPolicies.HasPermission(effectiveRole, RbacPolicies.PermReportsView);
+        var canManageUsers = RbacPolicies.HasPermission(effectiveRole, RbacPolicies.PermUsersManage);
 
         var stations = await db.Stations.OrderBy(s => s.Code).ToListAsync();
         var vehicleTypes = await db.VehicleTypes.OrderBy(t => t.Name).ToListAsync();
         var vehiclesQuery = db.Vehicles.AsQueryable();
-        if (!isPrivileged) vehiclesQuery = vehiclesQuery.Where(v => !v.InMaintenance);
+        if (!canManageFleet) vehiclesQuery = vehiclesQuery.Where(v => !v.InMaintenance);
         var vehicles = await vehiclesQuery.OrderBy(v => v.Code).ToListAsync();
 
         var busyWindows = await db.Reservations
@@ -32,59 +48,85 @@ public class CatalogController(RydioDbContext db) : ControllerBase
         var users = new List<object>();
         var monthlyRevenue = new List<Models.MonthlyRevenueRecord>();
 
-        if (!string.IsNullOrEmpty(userId))
+        if (liveUser is not null && effectiveRole is not null)
         {
-            var u = await db.Users.FindAsync(userId);
-            if (u is not null && u.Active)
+            currentUser = new
             {
-                currentUser = new { u.Id, u.Name, u.Email, u.Role, u.Active, u.CreatedAt };
-                reservations = isPrivileged
-                    ? await db.Reservations.OrderByDescending(r => r.CreatedAt).ToListAsync()
-                    : await db.Reservations
-                        .Where(r => r.UserId == userId || r.CustomerEmail == u.Email)
-                        .OrderByDescending(r => r.CreatedAt)
-                        .ToListAsync();
+                liveUser.Id,
+                liveUser.Name,
+                liveUser.Email,
+                Role = effectiveRole,
+                Permissions = RbacPolicies.GetPermissionsForRole(effectiveRole),
+                liveUser.Active,
+                liveUser.CreatedAt
+            };
 
-                if (isPrivileged)
-                {
-                    users = await db.Users
-                        .OrderByDescending(x => x.CreatedAt)
-                        .Select(x => (object)new { x.Id, x.Name, x.Email, x.Role, x.Active, x.CreatedAt })
-                        .ToListAsync();
+            reservations = canManageReservations
+                ? await db.Reservations.OrderByDescending(r => r.CreatedAt).ToListAsync()
+                : await db.Reservations
+                    .Where(r => r.UserId == liveUser.Id || r.CustomerEmail.ToLower() == liveUser.Email.ToLower())
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ToListAsync();
 
-                    var baseMonths = await db.MonthlyRevenue.OrderBy(m => m.SortOrder).ToListAsync();
-                    var monthMap = baseMonths.ToDictionary(
-                        m => m.Month,
-                        m => new Models.MonthlyRevenueRecord
-                        {
-                            Month = m.Month,
-                            SortOrder = m.SortOrder,
-                            RevenueMkd = m.RevenueMkd,
-                            Rides = m.Rides,
-                        },
-                        StringComparer.OrdinalIgnoreCase);
+            if (canManageUsers)
+            {
+                var allUsers = await db.Users
+                    .AsNoTracking()
+                    .OrderByDescending(x => x.CreatedAt)
+                    .ToListAsync();
 
-                    var nextOrder = baseMonths.Count + 1;
-                    foreach (var r in reservations.Where(x => x.Status != "Cancelled"))
+                users = allUsers
+                    .Select(x =>
                     {
-                        var label = r.StartTime.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture);
-                        if (!monthMap.TryGetValue(label, out var bucket))
+                        var normRole = RbacPolicies.NormalizeRole(x.Email, x.Role);
+                        return (object)new
                         {
-                            bucket = new Models.MonthlyRevenueRecord
-                            {
-                                Month = label,
-                                SortOrder = nextOrder++,
-                                RevenueMkd = 0,
-                                Rides = 0,
-                            };
-                            monthMap[label] = bucket;
-                        }
-                        bucket.RevenueMkd += r.TotalPriceMkd + r.LatePenaltyMkd;
-                        bucket.Rides += 1;
-                    }
+                            x.Id,
+                            x.Name,
+                            x.Email,
+                            Role = normRole,
+                            Permissions = RbacPolicies.GetPermissionsForRole(normRole),
+                            x.Active,
+                            x.CreatedAt
+                        };
+                    })
+                    .ToList();
+            }
 
-                    monthlyRevenue = monthMap.Values.OrderBy(m => m.SortOrder).ToList();
+            if (canViewReports)
+            {
+                var baseMonths = await db.MonthlyRevenue.OrderBy(m => m.SortOrder).ToListAsync();
+                var monthMap = baseMonths.ToDictionary(
+                    m => m.Month,
+                    m => new Models.MonthlyRevenueRecord
+                    {
+                        Month = m.Month,
+                        SortOrder = m.SortOrder,
+                        RevenueMkd = m.RevenueMkd,
+                        Rides = m.Rides,
+                    },
+                    StringComparer.OrdinalIgnoreCase);
+
+                var nextOrder = baseMonths.Count + 1;
+                foreach (var r in reservations.Where(x => x.Status != "Cancelled"))
+                {
+                    var label = r.StartTime.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture);
+                    if (!monthMap.TryGetValue(label, out var bucket))
+                    {
+                        bucket = new Models.MonthlyRevenueRecord
+                        {
+                            Month = label,
+                            SortOrder = nextOrder++,
+                            RevenueMkd = 0,
+                            Rides = 0,
+                        };
+                        monthMap[label] = bucket;
+                    }
+                    bucket.RevenueMkd += r.TotalPriceMkd + r.LatePenaltyMkd;
+                    bucket.Rides += 1;
                 }
+
+                monthlyRevenue = monthMap.Values.OrderBy(m => m.SortOrder).ToList();
             }
         }
 

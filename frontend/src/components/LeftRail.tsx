@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
+import { canAccessAdminPanel, isPrimarySuperAdmin } from '../utils/rbac';
 
 export type NavTab = 'home' | 'catalog' | 'stations' | 'my-rides' | 'admin';
 
@@ -84,8 +85,7 @@ export function LeftRail({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [mobileOpen]);
 
-  const isPrivileged =
-    currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const isPrivileged = canAccessAdminPanel(currentUser);
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.id === 'admin' && !isPrivileged) return false;
@@ -273,7 +273,7 @@ export function LeftRail({
             <div className="space-y-2.5 rounded-md border border-[#DDE2E8] bg-white p-3">
               <div>
                 <div className="flex items-center gap-1.5">
-                  {currentUser.role === 'SuperAdmin' && (
+                  {isPrimarySuperAdmin(currentUser) && (
                     <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[#0A1A33]" />
                   )}
                   <p className="truncate text-xs font-semibold text-[#0A1A33]">

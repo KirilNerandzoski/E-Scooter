@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Rydio.Api.Data;
 using Rydio.Api.Middleware;
+using Rydio.Api.Security;
 using Rydio.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -58,9 +61,70 @@ builder.Services
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ValidateLifetime = true,
         };
+
+        opt.Events = new JwtBearerEvents
+        {
+            // Hydrate live role & fine-grained RBAC permissions directly from PostgreSQL on every request
+            OnTokenValidated = async context =>
+            {
+                var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrWhiteSpace(userId))
+                {
+                    context.Fail("Missing user identifier.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<RydioDbContext>();
+                var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, context.HttpContext.RequestAborted);
+                if (user is null || !user.Active)
+                {
+                    context.Fail("Account is inactive or does not exist.");
+                    return;
+                }
+
+                if (context.Principal?.Identity is ClaimsIdentity identity)
+                {
+                    var effectiveRole = RbacPolicies.NormalizeRole(user.Email, user.Role);
+
+                    foreach (var oldRole in identity.FindAll(ClaimTypes.Role).ToList())
+                        identity.RemoveClaim(oldRole);
+                    foreach (var oldPerm in identity.FindAll(RbacPolicies.PermissionClaimType).ToList())
+                        identity.RemoveClaim(oldPerm);
+
+                    identity.AddClaim(new Claim(ClaimTypes.Role, effectiveRole));
+                    foreach (var perm in RbacPolicies.GetPermissionsForRole(effectiveRole))
+                    {
+                        identity.AddClaim(new Claim(RbacPolicies.PermissionClaimType, perm));
+                    }
+                }
+            },
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    message = "Authentication required. Please sign in to continue.",
+                    code = "UNAUTHORIZED",
+                    status = StatusCodes.Status401Unauthorized
+                }));
+            },
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    message = "Access denied: your account role does not have permission to modify the website.",
+                    code = "FORBIDDEN",
+                    status = StatusCodes.Status403Forbidden
+                }));
+            }
+        };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(RbacPolicies.RegisterPolicies);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services
