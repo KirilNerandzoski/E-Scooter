@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { Play, CornerDownLeft, XCircle, MapPin, Clock, CheckCircle2 } from 'lucide-react';
+import {
+  Play,
+  CornerDownLeft,
+  XCircle,
+  MapPin,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+} from 'lucide-react';
 import type { Reservation, Station, UserAccount, Vehicle } from '../types/rydio';
 import { canCancelReservation, formatMkd, formatShortDateTime } from '../utils/pricing';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -10,6 +19,7 @@ interface MyRidesPageProps {
   vehicles: Vehicle[];
   stations: Station[];
   onOpenAuth: (mode: 'login' | 'register') => void;
+  onBrowseCatalog: () => void;
   onPickUp: (reservationId: string) => void;
   onOpenReturn: (reservation: Reservation) => void;
   onCancel: (reservationId: string) => void;
@@ -21,6 +31,7 @@ export function MyRidesPage({
   vehicles,
   stations,
   onOpenAuth,
+  onBrowseCatalog,
   onPickUp,
   onOpenReturn,
   onCancel,
@@ -89,16 +100,23 @@ export function MyRidesPage({
           <h2 className="text-xs font-medium tracking-[0.16em] text-[#515F73]">ACTIVE RIGHT NOW</h2>
           {activeRides.map((res) => {
             const vehicle = getVehicle(res.vehicleId);
+            const isOverdue = new Date(res.endTime).getTime() < Date.now();
             return (
               <div
                 key={res.id}
                 className="indigo-basin-card flex flex-col justify-between gap-6 rounded-lg p-6 text-white sm:flex-row sm:items-center"
               >
                 <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.14em] text-white">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="rounded-full bg-[#10B981]/25 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.14em] text-[#A7F3D0]">
                       ACTIVE RIDE
                     </span>
+                    {isOverdue && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#EF4444]/25 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.12em] text-[#FECACA]">
+                        <AlertTriangle className="h-3 w-3" />
+                        OVERDUE (1.5× PENALTY)
+                      </span>
+                    )}
                     <span className="tabular-nums text-xs text-[#C4D2E8]">{res.id}</span>
                   </div>
                   <h3 className="font-display text-2xl font-normal text-white">
@@ -145,8 +163,16 @@ export function MyRidesPage({
         </h2>
         <div className="mt-4 space-y-3">
           {upcomingRides.length === 0 ? (
-            <div className="rounded-lg border border-[#DDE2E8] bg-white p-8 text-sm text-[#515F73]">
-              You have no upcoming reservations. Browse the catalog to reserve your next ride.
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white p-6 text-sm text-[#515F73]">
+              <span>You have no upcoming reservations yet.</span>
+              <button
+                type="button"
+                onClick={onBrowseCatalog}
+                className="inline-flex items-center gap-1.5 rounded bg-[#0A1A33] px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A]"
+              >
+                BROWSE CATALOG
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
             </div>
           ) : (
             upcomingRides.map((res) => {
@@ -162,7 +188,7 @@ export function MyRidesPage({
                       <span className="tabular-nums text-xs font-medium text-[#0A1A33]">
                         {res.id}
                       </span>
-                      <span className="rounded bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-medium tracking-[0.12em] text-[#0A1A33]">
+                      <span className="rounded border border-[#FDE68A] bg-[#FFFBEB] px-2 py-0.5 text-[11px] font-medium tracking-[0.12em] text-[#92400E]">
                         RESERVED
                       </span>
                     </div>
@@ -226,6 +252,7 @@ export function MyRidesPage({
             <div className="divide-y divide-[#DDE2E8]">
               {pastRides.map((res) => {
                 const vehicle = getVehicle(res.vehicleId);
+                const isCancelled = res.status === 'Cancelled';
                 return (
                   <div
                     key={res.id}
@@ -237,8 +264,14 @@ export function MyRidesPage({
                           {vehicle?.name ?? 'Electric Vehicle'}
                         </span>
                         <span className="tabular-nums text-xs text-[#515F73]">{res.id}</span>
-                        <span className="inline-flex items-center gap-1 rounded bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-medium tracking-[0.1em] text-[#515F73]">
-                          {res.status === 'Completed' && <CheckCircle2 className="h-3 w-3" />}
+                        <span
+                          className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium tracking-[0.1em] ${
+                            isCancelled
+                              ? 'border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]'
+                              : 'border-[#CBD5E1] bg-[#F1F5F9] text-[#334155]'
+                          }`}
+                        >
+                          {!isCancelled && <CheckCircle2 className="h-3 w-3" />}
                           {res.status.toUpperCase()}
                         </span>
                       </div>
@@ -249,13 +282,24 @@ export function MyRidesPage({
                       </p>
                     </div>
                     <div className="text-left sm:text-right">
-                      <p className="tabular-nums text-sm font-semibold text-[#0A1A33]">
-                        {formatMkd(res.totalPriceMkd + res.latePenaltyMkd)}
-                      </p>
-                      {res.latePenaltyMkd > 0 && (
-                        <p className="tabular-nums text-[11px] text-[#822020]">
-                          Includes {formatMkd(res.latePenaltyMkd)} late penalty
-                        </p>
+                      {isCancelled ? (
+                        <>
+                          <p className="tabular-nums text-xs text-[#8C97A8] line-through">
+                            {formatMkd(res.totalPriceMkd)}
+                          </p>
+                          <p className="text-[11px] font-medium text-[#515F73]">0 MKD charged</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="tabular-nums text-sm font-semibold text-[#0A1A33]">
+                            {formatMkd(res.totalPriceMkd + res.latePenaltyMkd)}
+                          </p>
+                          {res.latePenaltyMkd > 0 && (
+                            <p className="tabular-nums text-[11px] text-[#991B1B]">
+                              Includes {formatMkd(res.latePenaltyMkd)} late penalty
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

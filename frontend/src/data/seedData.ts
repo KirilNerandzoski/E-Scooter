@@ -300,7 +300,7 @@ export const INITIAL_RESERVATIONS: Reservation[] = [
     basePriceMkd: 1040,
     discountAppliedMkd: 0,
     latePenaltyMkd: 390,
-    totalPriceMkd: 1430,
+    totalPriceMkd: 1040,
     createdAt: addHours(-100),
   },
   {

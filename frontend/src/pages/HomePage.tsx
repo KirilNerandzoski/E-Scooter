@@ -1,7 +1,14 @@
 import { useRef } from 'react';
 import { ArrowRight, BatteryCharging, MapPin, ChevronRight, AlertCircle } from 'lucide-react';
 import type { Reservation, Station, Vehicle, VehicleType } from '../types/rydio';
-import { formatMkd, isVehicleAvailable, toLocalDateTimeInput, toSafeIso } from '../utils/pricing';
+import {
+  calculateReservationPrice,
+  formatMkd,
+  formatWindowDuration,
+  isVehicleAvailable,
+  toLocalDateTimeInput,
+  toSafeIso,
+} from '../utils/pricing';
 import { SuminagashiCanvas } from '../components/SuminagashiCanvas';
 import { VehicleSilhouette, resolveVehicleSilhouetteKind } from '../components/VehicleSilhouette';
 
@@ -53,6 +60,12 @@ export function HomePage({
   const windowInvalid =
     !startIso || !endIso || new Date(endIso).getTime() <= new Date(startIso).getTime();
 
+  const activeDurationHours =
+    !windowInvalid && startIso && endIso
+      ? Math.ceil((new Date(endIso).getTime() - new Date(startIso).getTime()) / (1000 * 60 * 60))
+      : null;
+  const windowLabel = formatWindowDuration(filterStart, filterEnd);
+
   const availableVehicles = vehicles.filter((v) => {
     if (v.inMaintenance) return false;
     if (filterTypeId && v.typeId !== filterTypeId) return false;
@@ -95,8 +108,8 @@ export function HomePage({
             Ride Skopje.
           </h1>
           <p className="mt-5 max-w-xl text-base leading-relaxed text-[#515F73]">
-            Reserve electric scooters and e-bikes by the hour or full day across six Skopje
-            stations. Transparent hourly tariffs with an automatic daily rate cap.
+            Reserve electric scooters and e-bikes by the hour or full day across {stations.length}{' '}
+            Skopje stations. Transparent hourly tariffs with an automatic daily rate cap.
           </p>
         </div>
 
@@ -104,7 +117,7 @@ export function HomePage({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onFindRides();
+            if (!windowInvalid) onFindRides();
           }}
           className="mt-8 rounded-lg border border-[#DDE2E8] bg-white/95 p-4 shadow-[0_8px_28px_rgba(10,26,51,0.05)] backdrop-blur-[2px]"
         >
@@ -199,7 +212,8 @@ export function HomePage({
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[#DDE2E8] pt-4">
             <button
               type="submit"
-              className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-[#F6F7F9] transition-colors hover:bg-[#1E2D4A]"
+              disabled={windowInvalid}
+              className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-[#F6F7F9] transition-colors hover:bg-[#1E2D4A] disabled:cursor-not-allowed disabled:opacity-45"
             >
               FIND RIDES
               <ChevronRight className="h-3.5 w-3.5" />
@@ -213,21 +227,30 @@ export function HomePage({
             </button>
 
             <div className="flex flex-wrap items-center gap-1.5 sm:ml-2">
-              {DURATION_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => applyPreset(p.hours)}
-                  className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium text-[#515F73] transition-colors hover:border-[#0A1A33] hover:text-[#0A1A33]"
-                >
-                  {p.label}
-                </button>
-              ))}
+              {DURATION_PRESETS.map((p) => {
+                const isActive = activeDurationHours === p.hours;
+                return (
+                  <button
+                    key={p.label}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => applyPreset(p.hours)}
+                    className={`rounded border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      isActive
+                        ? 'border-[#0A1A33] bg-[#0A1A33] text-white'
+                        : 'border-[#DDE2E8] bg-[#F6F7F9] text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
 
             <span className="tabular-nums ml-auto text-xs text-[#515F73]">
-              {availableVehicles.length}{' '}
-              {availableVehicles.length === 1 ? 'vehicle' : 'vehicles'} free for this window
+              {windowInvalid
+                ? 'Choose a valid time window'
+                : `${availableVehicles.length} ${availableVehicles.length === 1 ? 'vehicle' : 'vehicles'} free for this window`}
             </span>
           </div>
         </form>
@@ -321,28 +344,46 @@ export function HomePage({
                         isLead ? 'border-white/15' : 'border-[#DDE2E8]'
                       }`}
                     >
-                      <div className="flex items-baseline justify-between">
-                        <span className="tabular-nums text-sm font-semibold">
-                          {formatMkd(vehicle.hourlyRateMkd)}
-                          <span
-                            className={`text-xs font-normal ${
-                              isLead ? 'text-[#C4D2E8]' : 'text-[#515F73]'
-                            }`}
-                          >
-                            {' '}
-                            / hr
-                          </span>
-                        </span>
-                        <span
-                          className={`tabular-nums text-[11px] ${
-                            isLead ? 'text-[#C4D2E8]' : 'text-[#515F73]'
-                          }`}
-                        >
-                          Cap {formatMkd(vehicle.fullDayRateMkd)}/d
-                        </span>
-                      </div>
+                      {(() => {
+                        const est = !windowInvalid
+                          ? calculateReservationPrice(vehicle, filterStart, filterEnd)
+                          : null;
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex items-baseline justify-between">
+                              <span className="tabular-nums text-sm font-semibold">
+                                {formatMkd(vehicle.hourlyRateMkd)}
+                                <span
+                                  className={`text-xs font-normal ${
+                                    isLead ? 'text-[#C4D2E8]' : 'text-[#515F73]'
+                                  }`}
+                                >
+                                  {' '}
+                                  / hr
+                                </span>
+                              </span>
+                              <span
+                                className={`tabular-nums text-[11px] ${
+                                  isLead ? 'text-[#C4D2E8]' : 'text-[#515F73]'
+                                }`}
+                              >
+                                Cap {formatMkd(vehicle.fullDayRateMkd)}/d
+                              </span>
+                            </div>
+                            {est?.valid && (
+                              <p
+                                className={`tabular-nums text-[11px] font-medium ${
+                                  isLead ? 'text-[#DCE6F5]' : 'text-[#0A1A33]'
+                                }`}
+                              >
+                                Est. {formatMkd(est.finalPriceMkd)} ({windowLabel})
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
 
-                      <div className="mt-3.5 flex items-center justify-between">
+                      <div className="mt-3 flex items-center justify-between">
                         <span
                           className={`tabular-nums text-[11px] ${
                             isLead ? 'text-[#B9CAE3]' : 'text-[#515F73]'
@@ -367,6 +408,19 @@ export function HomePage({
                   </article>
                 );
               })}
+            </div>
+          )}
+
+          {availableVehicles.length > 4 && (
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={onFindRides}
+                className="inline-flex items-center gap-1.5 text-xs font-medium tracking-[0.12em] text-[#0A1A33] hover:underline"
+              >
+                VIEW ALL {availableVehicles.length} FREE VEHICLES
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
             </div>
           )}
         </section>

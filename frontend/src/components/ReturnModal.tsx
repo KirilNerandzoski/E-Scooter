@@ -13,7 +13,7 @@ interface ReturnModalProps {
     returnStationId: string;
     actualReturnTime: string;
     latePenaltyMkd: number;
-  }) => void;
+  }) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -26,6 +26,7 @@ export function ReturnModal({
 }: ReturnModalProps) {
   const [returnStationId, setReturnStationId] = useState(reservation.pickupStationId);
   const [simulateLateHours, setSimulateLateHours] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const [settledReceipt, setSettledReceipt] = useState<{
     stationName: string;
     baseMkd: number;
@@ -50,21 +51,29 @@ export function ReturnModal({
 
   const finalTotal = reservation.totalPriceMkd + penaltyMkd;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const stationName = stations.find((s) => s.id === returnStationId)?.name ?? 'Skopje Station';
-    onConfirmReturn({
-      reservationId: reservation.id,
-      returnStationId,
-      actualReturnTime: effectiveReturnDate.toISOString(),
-      latePenaltyMkd: penaltyMkd,
-    });
-    setSettledReceipt({
-      stationName,
-      baseMkd: reservation.totalPriceMkd,
-      penaltyMkd,
-      totalMkd: finalTotal,
-    });
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const stationName = stations.find((s) => s.id === returnStationId)?.name ?? 'Skopje Station';
+      const ok = await onConfirmReturn({
+        reservationId: reservation.id,
+        returnStationId,
+        actualReturnTime: effectiveReturnDate.toISOString(),
+        latePenaltyMkd: penaltyMkd,
+      });
+      if (ok) {
+        setSettledReceipt({
+          stationName,
+          baseMkd: reservation.totalPriceMkd,
+          penaltyMkd,
+          totalMkd: finalTotal,
+        });
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -234,9 +243,10 @@ export function ReturnModal({
             </button>
             <button
               type="submit"
-              className="rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A]"
+              disabled={submitting}
+              className="rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-45"
             >
-              COMPLETE RETURN
+              {submitting ? 'COMPLETING...' : 'COMPLETE RETURN'}
             </button>
           </div>
         </form>

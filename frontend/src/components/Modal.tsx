@@ -18,13 +18,17 @@ export function Modal({
 }: ModalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Focus first focusable element inside the modal
     const container = containerRef.current;
     if (container) {
       const firstFocusable = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
@@ -34,7 +38,7 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -62,7 +66,7 @@ export function Modal({
       document.body.style.overflow = prevOverflow;
       previousFocusRef.current?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
@@ -70,13 +74,13 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={labelledBy}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) onCloseRef.current();
       }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A1A33]/45 p-4 backdrop-blur-[2px]"
     >
       <div
         ref={containerRef}
-        className={`w-full ${maxWidthClass} rounded-lg border border-[#DDE2E8] bg-[#F6F7F9] shadow-2xl`}
+        className={`w-full ${maxWidthClass} max-h-[90vh] overflow-y-auto rounded-lg border border-[#DDE2E8] bg-[#F6F7F9] shadow-2xl`}
       >
         {children}
       </div>

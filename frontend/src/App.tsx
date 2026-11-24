@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { LeftRail, type NavTab } from './components/LeftRail';
 import { RightTelemetry } from './components/RightTelemetry';
 import { ReservationModal } from './components/ReservationModal';
@@ -69,9 +69,39 @@ function loadState<T>(key: string, fallback: T): T {
   }
 }
 
+const VALID_TABS: NavTab[] = ['home', 'catalog', 'stations', 'my-rides', 'admin'];
+
+function readTabFromHash(): NavTab {
+  if (typeof window === 'undefined') return 'home';
+  const raw = window.location.hash.replace(/^#\/?/, '') as NavTab;
+  return VALID_TABS.includes(raw) ? raw : 'home';
+}
+
 export function App() {
-  const [activeTab, setActiveTab] = useState<NavTab>('home');
+  const [activeTab, setActiveTabState] = useState<NavTab>(() => readTabFromHash());
   const [apiLive, setApiLive] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'connecting' | 'live' | 'offline'>(
+    isApiConfigured ? 'connecting' : 'offline'
+  );
+
+  const setActiveTab = useCallback((next: NavTab) => {
+    setActiveTabState(next);
+    if (typeof window !== 'undefined') {
+      const targetHash = `#${next}`;
+      if (window.location.hash !== targetHash) {
+        window.location.hash = targetHash;
+      }
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setActiveTabState(readTabFromHash());
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const [users, setUsers] = useState<UserAccount[]>(() =>
     loadState('rydio_users_v1', INITIAL_USERS)
@@ -116,24 +146,31 @@ export function App() {
   });
 
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
+  const pendingBookingVehicleRef = useRef<Vehicle | null>(null);
   const [returningReservation, setReturningReservation] = useState<Reservation | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    setToast(msg);
+    setToast({ message, tone });
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
-    }, 3600);
+    }, tone === 'error' ? 4800 : 3600);
   }, []);
 
   const syncFromApi = useCallback(async () => {
-    if (!isApiConfigured) return;
+    if (!isApiConfigured) {
+      setSyncStatus('offline');
+      return;
+    }
     try {
       const data = await fetchBootstrapData();
-      if (!data) return;
+      if (!data) {
+        setSyncStatus('offline');
+        return;
+      }
       setStations(data.stations);
       setVehicleTypes(data.vehicleTypes);
       setVehicles(data.vehicles);
@@ -143,8 +180,10 @@ export function App() {
       if (data.users.length > 0) setUsers(data.users);
       if (data.monthlyRevenue.length > 0) setMonthlyRevenue(data.monthlyRevenue);
       setApiLive(true);
+      setSyncStatus('live');
     } catch {
       setApiLive(false);
+      setSyncStatus('offline');
     }
   }, []);
 
@@ -192,16 +231,26 @@ export function App() {
     }));
   }, [apiLive, reservations, busyWindows]);
 
+  const restorePendingBooking = useCallback(() => {
+    const pending = pendingBookingVehicleRef.current;
+    if (pending) {
+      pendingBookingVehicleRef.current = null;
+      setBookingVehicle(pending);
+    }
+  }, []);
+
   const handleApiAuthSuccess = async (user: UserAccount) => {
     setApiCurrentUser(user);
     await syncFromApi();
     setAuthModalMode(null);
+    restorePendingBooking();
     showToast(`Signed in as ${user.name} (${user.role}).`);
   };
 
   const handleLocalLoginSuccess = (user: UserAccount) => {
     setCurrentUserId(user.id);
     setAuthModalMode(null);
+    restorePendingBooking();
     showToast(`Signed in as ${user.name} (${user.role}).`);
   };
 
@@ -209,6 +258,7 @@ export function App() {
     setUsers((prev) => [...prev, newUser]);
     setCurrentUserId(newUser.id);
     setAuthModalMode(null);
+    restorePendingBooking();
     showToast(`Welcome to Rydio, ${newUser.name}!`);
   };
 
@@ -281,10 +331,10 @@ export function App() {
     basePriceMkd: number;
     discountAppliedMkd: number;
     totalPriceMkd: number;
-  }) => {
-    if (!currentUser) return;
+  }): Promise<boolean> => {
+    if (!currentUser) return false;
     const vehicle = vehicles.find((v) => v.id === payload.vehicleId);
-    if (!vehicle) return;
+    if (!vehicle) return false;
 
     if (apiLive) {
       try {
@@ -297,10 +347,14 @@ export function App() {
         setBookingVehicle(null);
         setActiveTab('my-rides');
         showToast(`Reserved ${vehicle.name} (${created.id}).`);
+        return true;
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Could not create reservation.');
+        showToast(
+          err instanceof Error ? err.message : 'Could not create reservation.',
+          'error'
+        );
+        return false;
       }
-      return;
     }
 
     const newRes: Reservation = {
@@ -323,6 +377,7 @@ export function App() {
     setBookingVehicle(null);
     setActiveTab('my-rides');
     showToast(`Reserved ${vehicle.name} (${newRes.id}).`);
+    return true;
   };
 
   const handlePickUp = async (reservationId: string) => {
@@ -332,7 +387,7 @@ export function App() {
         await syncFromApi();
         showToast(`Vehicle picked up — reservation ${reservationId} is now Active.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Pickup failed.');
+        showToast(err instanceof Error ? err.message : 'Pickup failed.', 'error');
       }
       return;
     }
@@ -347,7 +402,7 @@ export function App() {
     returnStationId: string;
     actualReturnTime: string;
     latePenaltyMkd: number;
-  }) => {
+  }): Promise<boolean> => {
     const stationName = stations.find((s) => s.id === payload.returnStationId)?.name ?? 'station';
     if (apiLive) {
       try {
@@ -358,14 +413,15 @@ export function App() {
         });
         await syncFromApi();
         showToast(`Vehicle docked at ${stationName}.`);
+        return true;
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Return failed.');
+        showToast(err instanceof Error ? err.message : 'Return failed.', 'error');
+        return false;
       }
-      return;
     }
 
     const target = reservations.find((r) => r.id === payload.reservationId);
-    if (!target) return;
+    if (!target) return false;
 
     setReservations((prev) =>
       prev.map((r) =>
@@ -386,6 +442,7 @@ export function App() {
       )
     );
     showToast(`Vehicle docked at ${stationName}.`);
+    return true;
   };
 
   const handleCancelReservation = async (reservationId: string) => {
@@ -395,7 +452,7 @@ export function App() {
         await syncFromApi();
         showToast(`Reservation ${reservationId} cancelled.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Cancellation failed.');
+        showToast(err instanceof Error ? err.message : 'Cancellation failed.', 'error');
       }
       return;
     }
@@ -419,7 +476,7 @@ export function App() {
             : `${target.name} moved to service (hidden from catalog).`
         );
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Update failed.');
+        showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
       }
       return;
     }
@@ -440,7 +497,7 @@ export function App() {
         await syncFromApi();
         showToast(`Added ${veh.name} to fleet.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Could not add vehicle.');
+        showToast(err instanceof Error ? err.message : 'Could not add vehicle.', 'error');
       }
       return;
     }
@@ -456,7 +513,7 @@ export function App() {
         await syncFromApi();
         showToast('Vehicle details updated.');
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Update failed.');
+        showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
       }
       return;
     }
@@ -472,7 +529,7 @@ export function App() {
         await syncFromApi();
         showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Delete failed.');
+        showToast(err instanceof Error ? err.message : 'Delete failed.', 'error');
       }
       return;
     }
@@ -487,7 +544,7 @@ export function App() {
         await syncFromApi();
         showToast(`Added vehicle type "${vt.name}".`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Could not add type.');
+        showToast(err instanceof Error ? err.message : 'Could not add type.', 'error');
       }
       return;
     }
@@ -502,7 +559,7 @@ export function App() {
         await syncFromApi();
         showToast('Vehicle type updated.');
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Update failed.');
+        showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
       }
       return;
     }
@@ -513,7 +570,7 @@ export function App() {
   const handleDeleteType = async (typeId: string) => {
     const inUse = vehicles.some((v) => v.typeId === typeId);
     if (inUse) {
-      showToast('Cannot delete type while vehicles are still assigned to it.');
+      showToast('Cannot delete type while vehicles are still assigned to it.', 'error');
       return;
     }
     if (apiLive) {
@@ -522,7 +579,7 @@ export function App() {
         await syncFromApi();
         showToast('Vehicle type deleted.');
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Delete failed.');
+        showToast(err instanceof Error ? err.message : 'Delete failed.', 'error');
       }
       return;
     }
@@ -537,7 +594,7 @@ export function App() {
         await syncFromApi();
         showToast(`Added station "${st.name}".`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Could not add station.');
+        showToast(err instanceof Error ? err.message : 'Could not add station.', 'error');
       }
       return;
     }
@@ -552,7 +609,7 @@ export function App() {
         await syncFromApi();
         showToast('Station updated.');
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Update failed.');
+        showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
       }
       return;
     }
@@ -563,7 +620,7 @@ export function App() {
   const handleDeleteStation = async (stationId: string) => {
     const hasDocked = vehicles.some((v) => v.stationId === stationId);
     if (hasDocked) {
-      showToast('Move docked vehicles to another station before deleting this station.');
+      showToast('Move docked vehicles to another station before deleting this station.', 'error');
       return;
     }
     if (apiLive) {
@@ -572,7 +629,7 @@ export function App() {
         await syncFromApi();
         showToast('Station deleted.');
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Delete failed.');
+        showToast(err instanceof Error ? err.message : 'Delete failed.', 'error');
       }
       return;
     }
@@ -590,7 +647,7 @@ export function App() {
         await syncFromApi();
         showToast(`Reservation ${reservationId} marked ${status}.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Status update failed.');
+        showToast(err instanceof Error ? err.message : 'Status update failed.', 'error');
       }
       return;
     }
@@ -607,7 +664,7 @@ export function App() {
         await syncFromApi();
         showToast(`Reservation ${reservationId} removed.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Delete failed.');
+        showToast(err instanceof Error ? err.message : 'Delete failed.', 'error');
       }
       return;
     }
@@ -622,7 +679,7 @@ export function App() {
         await syncFromApi();
         showToast(`Created ${user.role} account for ${user.name}.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Could not create user.');
+        showToast(err instanceof Error ? err.message : 'Could not create user.', 'error');
       }
       return;
     }
@@ -642,7 +699,7 @@ export function App() {
         await syncFromApi();
         showToast(`Updated user role to ${nextRole}.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Role update failed.');
+        showToast(err instanceof Error ? err.message : 'Role update failed.', 'error');
       }
       return;
     }
@@ -659,7 +716,7 @@ export function App() {
         await syncFromApi();
         showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Update failed.');
+        showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
       }
       return;
     }
@@ -674,7 +731,7 @@ export function App() {
         await syncFromApi();
         showToast('User account deleted.');
       } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Delete failed.');
+        showToast(err instanceof Error ? err.message : 'Delete failed.', 'error');
       }
       return;
     }
@@ -703,6 +760,7 @@ export function App() {
 
   const isPrivileged =
     currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const showTelemetry = activeTab !== 'admin' && activeTab !== 'my-rides';
 
   return (
     <div className="washi-surface min-h-screen text-[#0A1A33]">
@@ -717,7 +775,20 @@ export function App() {
         activeRideCount={myActiveCount}
       />
 
-      <main className="lg:pl-[196px] xl:pr-[128px]">
+      {syncStatus === 'connecting' && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed top-3 z-40 flex items-center gap-2 rounded-full border border-[#DDE4EE] bg-white/95 px-3 py-1.5 text-[11px] font-medium text-[#5A6A82] shadow-sm backdrop-blur ${
+            showTelemetry ? 'right-4 xl:right-[144px]' : 'right-4'
+          }`}
+        >
+          <Loader2 className="h-3 w-3 animate-spin text-[#0A1A33]" />
+          Connecting to Rydio server…
+        </div>
+      )}
+
+      <main className={showTelemetry ? 'lg:pl-[196px] xl:pr-[128px]' : 'lg:pl-[196px]'}>
         {activeTab === 'home' && (
           <HomePage
             vehicles={vehicles}
@@ -777,6 +848,7 @@ export function App() {
             vehicles={vehicles}
             stations={stations}
             onOpenAuth={(mode) => setAuthModalMode(mode)}
+            onBrowseCatalog={() => setActiveTab('catalog')}
             onPickUp={(id) => void handlePickUp(id)}
             onOpenReturn={(res) => setReturningReservation(res)}
             onCancel={(id) => void handleCancelReservation(id)}
@@ -786,6 +858,7 @@ export function App() {
         {activeTab === 'admin' && isPrivileged && currentUser && (
           <AdminPage
             currentUser={currentUser}
+            apiLive={apiLive}
             users={users}
             vehicles={vehicles}
             vehicleTypes={vehicleTypes}
@@ -811,14 +884,44 @@ export function App() {
             onResetSystemData={handleResetSystemData}
           />
         )}
+
+        {activeTab === 'admin' && (!isPrivileged || !currentUser) && (
+          <div className="mx-auto max-w-[680px] px-6 py-24 text-center">
+            <h1 className="font-display text-2xl font-light text-[#0A1A33]">
+              Administrator access required
+            </h1>
+            <p className="mt-2 text-sm text-[#5A6A82]">
+              Sign in with an Admin or SuperAdmin account to manage fleet vehicles, stations, and
+              revenue reports.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setAuthModalMode('login')}
+                className="rounded-md bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-[#13294B]"
+              >
+                SIGN IN
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('home')}
+                className="rounded-md border border-[#DDE4EE] bg-white px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-[#0A1A33] transition hover:border-[#0A1A33]"
+              >
+                BACK TO HOME
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
-      <RightTelemetry
-        windowDurationLabel={windowDurationLabel}
-        windowFreeCount={windowFreeCount}
-        selectedStationLabel={selectedStationLabel}
-        activeRidesCount={activeRidesCount}
-      />
+      {showTelemetry && (
+        <RightTelemetry
+          windowDurationLabel={windowDurationLabel}
+          windowFreeCount={windowFreeCount}
+          selectedStationLabel={selectedStationLabel}
+          activeRidesCount={activeRidesCount}
+        />
+      )}
 
       {authModalMode && (
         <AuthModal
@@ -828,7 +931,10 @@ export function App() {
           onApiAuthSuccess={handleApiAuthSuccess}
           onLocalLoginSuccess={handleLocalLoginSuccess}
           onLocalRegisterSuccess={handleLocalRegisterSuccess}
-          onClose={() => setAuthModalMode(null)}
+          onClose={() => {
+            setAuthModalMode(null);
+            restorePendingBooking();
+          }}
         />
       )}
 
@@ -841,8 +947,12 @@ export function App() {
           initialEnd={filterEnd}
           reservations={availabilityReservations}
           currentUser={currentUser}
-          onRequireAuth={(mode) => setAuthModalMode(mode)}
-          onConfirm={(p) => void handleConfirmReservation(p)}
+          onRequireAuth={(mode) => {
+            pendingBookingVehicleRef.current = bookingVehicle;
+            setBookingVehicle(null);
+            setAuthModalMode(mode);
+          }}
+          onConfirm={handleConfirmReservation}
           onClose={() => setBookingVehicle(null)}
         />
       )}
@@ -852,21 +962,33 @@ export function App() {
           reservation={returningReservation}
           vehicle={returningVehicle}
           stations={stations}
-          onConfirmReturn={(p) => void handleConfirmReturn(p)}
+          onConfirmReturn={handleConfirmReturn}
           onClose={() => setReturningReservation(null)}
         />
       )}
 
       <div
-        role="status"
-        aria-live="polite"
+        role={toast?.tone === 'error' ? 'alert' : 'status'}
+        aria-live={toast?.tone === 'error' ? 'assertive' : 'polite'}
         aria-atomic="true"
-        className="pointer-events-none fixed bottom-6 right-6 z-50"
+        className={`pointer-events-none fixed bottom-6 z-50 ${
+          showTelemetry ? 'right-6 xl:right-[144px]' : 'right-6'
+        }`}
       >
         {toast && (
-          <div className="pointer-events-auto flex items-center gap-2.5 rounded-md border border-[#0A1A33] bg-[#0A1A33] px-4 py-3 text-xs font-medium text-white shadow-xl">
-            <CheckCircle2 className="h-4 w-4 text-[#C4D2E8]" />
-            {toast}
+          <div
+            className={`pointer-events-auto flex items-center gap-2.5 rounded-md border px-4 py-3 text-xs font-medium text-white shadow-xl ${
+              toast.tone === 'error'
+                ? 'border-[#991B1B] bg-[#991B1B]'
+                : 'border-[#0A1A33] bg-[#0A1A33]'
+            }`}
+          >
+            {toast.tone === 'error' ? (
+              <AlertCircle className="h-4 w-4 shrink-0 text-white/90" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-[#C4D2E8]" />
+            )}
+            <span>{toast.message}</span>
           </div>
         )}
       </div>

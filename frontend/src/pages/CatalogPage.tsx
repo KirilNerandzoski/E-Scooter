@@ -10,7 +10,14 @@ import {
   MapPin,
 } from 'lucide-react';
 import type { Reservation, Station, Vehicle, VehicleType } from '../types/rydio';
-import { formatMkd, isVehicleAvailable, toSafeIso } from '../utils/pricing';
+import {
+  calculateReservationPrice,
+  formatMkd,
+  formatWindowDuration,
+  isVehicleAvailable,
+  toLocalDateTimeInput,
+  toSafeIso,
+} from '../utils/pricing';
 import { VehicleSilhouette, resolveVehicleSilhouetteKind } from '../components/VehicleSilhouette';
 
 interface CatalogPageProps {
@@ -30,6 +37,12 @@ interface CatalogPageProps {
 }
 
 const PAGE_SIZE = 6;
+const DURATION_PRESETS = [
+  { label: '2h', hours: 2 },
+  { label: '4h', hours: 4 },
+  { label: 'Full Day', hours: 24 },
+  { label: 'Weekend', hours: 48 },
+];
 
 export function CatalogPage({
   vehicles,
@@ -53,6 +66,23 @@ export function CatalogPage({
   const endIso = toSafeIso(filterEnd);
   const windowInvalid =
     !startIso || !endIso || new Date(endIso).getTime() <= new Date(startIso).getTime();
+
+  const activeDurationHours =
+    !windowInvalid && startIso && endIso
+      ? Math.ceil((new Date(endIso).getTime() - new Date(startIso).getTime()) / (1000 * 60 * 60))
+      : null;
+  const windowLabel = formatWindowDuration(filterStart, filterEnd);
+
+  const applyPreset = (hours: number) => {
+    const baseStart = startIso ? new Date(startIso) : new Date(Date.now() + 60 * 60 * 1000);
+    if (!startIso) {
+      baseStart.setMinutes(0, 0, 0);
+      onChangeStart(toLocalDateTimeInput(baseStart));
+    }
+    const nextEnd = new Date(baseStart.getTime() + hours * 60 * 60 * 1000);
+    onChangeEnd(toLocalDateTimeInput(nextEnd));
+    setPage(1);
+  };
 
   const filteredVehicles = useMemo(() => {
     return vehicles
@@ -188,6 +218,43 @@ export function CatalogPage({
             className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
           />
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#DDE2E8] pt-3 sm:col-span-2 lg:col-span-4">
+          <span className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+            QUICK WINDOW:
+          </span>
+          {DURATION_PRESETS.map((p) => {
+            const isActive = activeDurationHours === p.hours;
+            return (
+              <button
+                key={p.label}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => applyPreset(p.hours)}
+                className={`rounded border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  isActive
+                    ? 'border-[#0A1A33] bg-[#0A1A33] text-white'
+                    : 'border-[#DDE2E8] bg-[#F6F7F9] text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]'
+                }`}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+          {(filterTypeId || filterStationId) && (
+            <button
+              type="button"
+              onClick={() => {
+                onChangeType('');
+                onChangeStation('');
+                setPage(1);
+              }}
+              className="ml-auto text-xs font-medium text-[#515F73] hover:text-[#0A1A33] hover:underline"
+            >
+              Reset filters
+            </button>
+          )}
+        </div>
       </div>
 
       {windowInvalid && (
@@ -210,19 +277,33 @@ export function CatalogPage({
             <p className="mt-2 text-sm text-[#515F73]">
               Clear a filter or adjust the start/end window to view other rides across Skopje.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                onChangeType('');
+                onChangeStation('');
+                setPage(1);
+              }}
+              className="mt-5 rounded border border-[#0A1A33] px-4 py-2 text-xs font-medium tracking-[0.14em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
+            >
+              RESET FILTERS
+            </button>
           </div>
         ) : (
           pageItems.map((vehicle) => {
             const typeName = getTypeName(vehicle.typeId);
             const silhouetteKind = resolveVehicleSilhouetteKind(vehicle.name, typeName);
+            const est = !windowInvalid
+              ? calculateReservationPrice(vehicle, filterStart, filterEnd)
+              : null;
             return (
               <article
                 key={vehicle.id}
                 className="flex flex-col justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white p-5 transition-colors hover:border-[#0A1A33]/45 sm:flex-row sm:items-center"
               >
-                <div className="flex items-center gap-5">
-                  <div className="hidden rounded-md border border-[#DDE2E8] bg-[#F6F7F9] p-2.5 sm:block">
-                    <VehicleSilhouette kind={silhouetteKind} className="h-10 w-16" />
+                <div className="flex items-center gap-4 sm:gap-5">
+                  <div className="shrink-0 rounded-md border border-[#DDE2E8] bg-[#F6F7F9] p-2 sm:p-2.5">
+                    <VehicleSilhouette kind={silhouetteKind} className="h-8 w-12 sm:h-10 sm:w-16" />
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2.5">
@@ -264,6 +345,11 @@ export function CatalogPage({
                     <p className="tabular-nums text-xs text-[#515F73]">
                       Full-day cap: {formatMkd(vehicle.fullDayRateMkd)}
                     </p>
+                    {est?.valid && (
+                      <p className="tabular-nums mt-0.5 text-xs font-semibold text-[#0A1A33]">
+                        Est. {formatMkd(est.finalPriceMkd)} ({windowLabel})
+                      </p>
+                    )}
                   </div>
 
                   <button

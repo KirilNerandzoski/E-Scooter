@@ -28,7 +28,7 @@ interface ReservationModalProps {
     basePriceMkd: number;
     discountAppliedMkd: number;
     totalPriceMkd: number;
-  }) => void;
+  }) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -53,6 +53,7 @@ export function ReservationModal({
 }: ReservationModalProps) {
   const [startTime, setStartTime] = useState(initialStart);
   const [endTime, setEndTime] = useState(initialEnd);
+  const [submitting, setSubmitting] = useState(false);
 
   const price = useMemo(
     () => calculateReservationPrice(vehicle, startTime, endTime),
@@ -69,7 +70,8 @@ export function ReservationModal({
     );
   }, [vehicle, reservations, startTime, endTime, price.valid]);
 
-  const canSubmit = price.valid && !hasConflict && !vehicle.inMaintenance && Boolean(currentUser);
+  const canSubmit =
+    price.valid && !hasConflict && !vehicle.inMaintenance && Boolean(currentUser) && !submitting;
 
   const applyPreset = (hours: number) => {
     const startIso = toSafeIso(startTime);
@@ -82,19 +84,24 @@ export function ReservationModal({
     setEndTime(toLocalDateTimeInput(nextEnd));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const startIso = toSafeIso(startTime);
     const endIso = toSafeIso(endTime);
     if (!canSubmit || !startIso || !endIso) return;
-    onConfirm({
-      vehicleId: vehicle.id,
-      startTime: startIso,
-      endTime: endIso,
-      basePriceMkd: price.basePriceMkd,
-      discountAppliedMkd: price.discountAppliedMkd,
-      totalPriceMkd: price.finalPriceMkd,
-    });
+    setSubmitting(true);
+    try {
+      await onConfirm({
+        vehicleId: vehicle.id,
+        startTime: startIso,
+        endTime: endIso,
+        basePriceMkd: price.basePriceMkd,
+        discountAppliedMkd: price.discountAppliedMkd,
+        totalPriceMkd: price.finalPriceMkd,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const silhouetteKind = resolveVehicleSilhouetteKind(
@@ -242,7 +249,7 @@ export function ReservationModal({
             </span>
           </div>
           <div className="mt-2 flex items-center justify-between text-xs text-[#515F73]">
-            <span>Full-day capped rate (auto-applied on 6h+ / 24h blocks)</span>
+            <span>Full-day capped rate (auto-applied on multi-hour / 24h blocks)</span>
             <span className="tabular-nums font-medium text-[#0A1A33]">
               {formatMkd(vehicle.fullDayRateMkd)} / day
             </span>
@@ -304,7 +311,7 @@ export function ReservationModal({
             disabled={!canSubmit}
             className="inline-flex items-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:cursor-not-allowed disabled:opacity-45"
           >
-            CONFIRM RESERVATION
+            {submitting ? 'CONFIRMING...' : 'CONFIRM RESERVATION'}
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>

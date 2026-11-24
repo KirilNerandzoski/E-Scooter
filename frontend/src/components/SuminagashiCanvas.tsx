@@ -28,27 +28,7 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
     let targetY = 0.42;
     let time = 0;
 
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (reducedMotion) draw();
-    };
-
-    resize();
-    window.addEventListener('resize', resize);
-
-    const onPointerMove = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        targetX = Math.max(0.1, Math.min(0.95, (e.clientX - rect.left) / rect.width));
-        targetY = Math.max(0.08, Math.min(0.9, (e.clientY - rect.top) / rect.height));
-      }
-    };
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
-
+    // Declare draw BEFORE resize so resize() can safely redraw under reducedMotion without TDZ errors
     const draw = () => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
@@ -63,7 +43,6 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
       const dropX = width * (0.78 + (pointerX - 0.78) * 0.06);
       const dropY = height * (0.42 + (pointerY - 0.42) * 0.06);
 
-      // Compute hero text safe-zone rectangle in canvas coordinates
       let safeBox: { left: number; top: number; right: number; bottom: number } | null = null;
       if (safeZoneRef?.current) {
         const cRect = canvas.getBoundingClientRect();
@@ -76,7 +55,6 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
         };
       }
 
-      // Flowing marbled ribbons spanning full width (x = 0 at the HOME rail to x = width)
       const ribbonCount = 26;
       for (let i = 0; i < ribbonCount; i++) {
         const ratio = i / (ribbonCount - 1);
@@ -103,7 +81,6 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
 
           let y = height * 0.42 + baseOffset + wave1 + wave2 - (u - 0.5) * height * 0.12;
 
-          // Gentle vortex swirl around the ink drop point on the right
           const dx = x - dropX;
           const dy = y - dropY;
           const dist = Math.sqrt(dx * dx + dy * dy);
@@ -119,7 +96,6 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
         ctx.stroke();
       }
 
-      // Concentric feathered suminagashi ink drop rings
       for (let r = 0; r < 7; r++) {
         const radius = 12 + r * 15 + Math.sin(time * 0.8 + r) * 1.8;
         ctx.beginPath();
@@ -137,7 +113,6 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
         ctx.stroke();
       }
 
-      // Deep indigo ink drop core
       const coreGrad = ctx.createRadialGradient(dropX, dropY, 1, dropX, dropY, 16);
       coreGrad.addColorStop(0, 'rgba(10, 26, 51, 0.78)');
       coreGrad.addColorStop(0.55, 'rgba(30, 45, 74, 0.28)');
@@ -147,8 +122,6 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
       ctx.arc(dropX, dropY, 16, 0, Math.PI * 2);
       ctx.fill();
 
-      // Softly clear ONLY the hero text safe zone so lines reach the left HOME rail
-      // cleanly without ever overlapping the headline or paragraph copy.
       if (safeBox) {
         const padX = 28;
         const padY = 18;
@@ -178,7 +151,28 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
       }
     };
 
-    draw();
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (reducedMotion) draw();
+    };
+
+    resize();
+    if (!reducedMotion) draw();
+
+    window.addEventListener('resize', resize);
+
+    const onPointerMove = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        targetX = Math.max(0.1, Math.min(0.95, (e.clientX - rect.left) / rect.width));
+        targetY = Math.max(0.08, Math.min(0.9, (e.clientY - rect.top) / rect.height));
+      }
+    };
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
 
     return () => {
       window.removeEventListener('resize', resize);

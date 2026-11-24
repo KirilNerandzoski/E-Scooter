@@ -39,7 +39,7 @@ export function SkopjeVardarMap({
       <div className="relative w-full overflow-x-auto bg-[#F6F7F9]/60 p-4">
         <svg
           viewBox="0 0 860 310"
-          role="img"
+          role="group"
           aria-label="Interactive Skopje station map along the Vardar River"
           className="h-auto min-w-[620px] w-full"
         >
@@ -137,8 +137,17 @@ export function SkopjeVardarMap({
                 role="button"
                 tabIndex={0}
                 aria-label={`${station.name}, ${freeCount} vehicles free`}
-                className="cursor-pointer outline-none"
+                aria-pressed={isSelected}
+                className="cursor-pointer focus-visible:outline-none [&:focus-visible_.focus-ring]:opacity-100"
               >
+                <circle
+                  r="23"
+                  fill="none"
+                  stroke="#0A1A33"
+                  strokeWidth="2"
+                  strokeDasharray="3 2"
+                  className="focus-ring opacity-0 transition-opacity"
+                />
                 {isSelected && (
                   <circle r="20" fill="#0A1A33" opacity="0.12" />
                 )}

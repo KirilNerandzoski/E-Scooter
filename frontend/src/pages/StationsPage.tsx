@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ArrowRight, MapPin } from 'lucide-react';
+import { ArrowRight, Clock, MapPin } from 'lucide-react';
 import type { Reservation, Station, Vehicle } from '../types/rydio';
-import { isVehicleAvailable, toSafeIso } from '../utils/pricing';
+import { formatShortDateTime, isVehicleAvailable, toSafeIso } from '../utils/pricing';
 import { SkopjeVardarMap } from '../components/SkopjeVardarMap';
 
 interface StationsPageProps {
@@ -38,14 +38,25 @@ export function StationsPage({
 
   return (
     <div className="mx-auto max-w-[1120px] px-6 py-10 sm:px-10">
-      <div className="border-b border-[#DDE2E8] pb-6">
-        <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-[#0A1A33] sm:text-4xl">
-          Skopje Docking Stations
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-[#515F73]">
-          Pick up your reserved scooter or e-bike at any hub along the Vardar corridor and return it
-          to any Skopje station when your ride ends.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#DDE2E8] pb-6">
+        <div>
+          <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-[#0A1A33] sm:text-4xl">
+            Skopje Docking Stations
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-[#515F73]">
+            Pick up your reserved scooter or e-bike at any hub along the Vardar corridor and return
+            it to any Skopje station when your ride ends.
+          </p>
+        </div>
+        {startIso && endIso && (
+          <div className="tabular-nums inline-flex items-center gap-2 rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2 text-xs text-[#515F73]">
+            <Clock className="h-3.5 w-3.5 text-[#0A1A33]" />
+            <span>
+              Window: <strong className="text-[#0A1A33]">{formatShortDateTime(startIso)}</strong> →{' '}
+              <strong className="text-[#0A1A33]">{formatShortDateTime(endIso)}</strong>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Interactive Skopje / Vardar Corridor Map */}
@@ -63,8 +74,15 @@ export function StationsPage({
           return (
             <article
               key={station.id}
+              tabIndex={0}
               onClick={() => setSelectedStationId(station.id)}
-              className={`flex flex-col justify-between rounded-lg border bg-white p-6 transition-colors ${
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedStationId(station.id);
+                }
+              }}
+              className={`flex cursor-pointer flex-col justify-between rounded-lg border bg-white p-6 transition-colors ${
                 isHighlighted
                   ? 'border-[#0A1A33] shadow-[0_8px_24px_rgba(10,26,51,0.08)]'
                   : 'border-[#DDE2E8] hover:border-[#0A1A33]/45'
@@ -91,9 +109,9 @@ export function StationsPage({
 
               <div className="mt-6 border-t border-[#DDE2E8] pt-4">
                 <div className="flex items-baseline justify-between text-xs">
-                  <span className="text-[#515F73]">Free for selected window</span>
+                  <span className="text-[#515F73]">Available vehicles</span>
                   <span className="tabular-nums font-semibold text-[#0A1A33]">
-                    {freeCount} / {station.capacity} docks
+                    {freeCount} free · {station.capacity} docks
                   </span>
                 </div>
                 <button

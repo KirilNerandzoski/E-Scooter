@@ -27,6 +27,7 @@ import { formatMkd, formatShortDateTime } from '../utils/pricing';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 interface AdminPageProps {
+  apiLive: boolean;
   currentUser: UserAccount;
   users: UserAccount[];
   vehicles: Vehicle[];
@@ -63,6 +64,7 @@ interface PendingConfirm {
 }
 
 export function AdminPage({
+  apiLive,
   currentUser,
   users,
   vehicles,
@@ -223,13 +225,27 @@ export function AdminPage({
   };
 
   const saveEditVehicle = (vehicleId: string) => {
+    const safeRate = Math.max(50, Number.isFinite(editRate) ? editRate : 180);
     onUpdateVehicle(vehicleId, {
-      hourlyRateMkd: editRate,
-      fullDayRateMkd: Math.round(editRate * 5.4),
+      hourlyRateMkd: safeRate,
+      fullDayRateMkd: Math.round(safeRate * 5.4),
       stationId: editStationId,
-      batteryPercent: Math.max(0, Math.min(100, editBattery)),
+      batteryPercent: Math.max(0, Math.min(100, Number.isFinite(editBattery) ? editBattery : 100)),
     });
     setEditingVehicleId(null);
+  };
+
+  const statusBadgeClass = (status: ReservationStatus) => {
+    switch (status) {
+      case 'Active':
+        return 'border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]';
+      case 'Reserved':
+        return 'border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]';
+      case 'Cancelled':
+        return 'border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]';
+      default:
+        return 'border-[#CBD5E1] bg-[#F1F5F9] text-[#334155]';
+    }
   };
 
   const handleCreateType = (e: React.FormEvent) => {
@@ -430,26 +446,32 @@ export function AdminPage({
           {isSuperAdmin && (
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white px-6 py-4">
               <div>
-                <p className="text-sm font-medium text-[#0A1A33]">System Maintenance Tools</p>
+                <p className="text-sm font-medium text-[#0A1A33]">System Sync &amp; Tools</p>
                 <p className="text-xs text-[#515F73]">
-                  Restore initial Skopje stations, fleet, sample reservations, and default accounts.
+                  {apiLive
+                    ? 'Refresh all fleet, station, reservation, and user tables directly from your live PostgreSQL database.'
+                    : 'Restore initial local Skopje stations, fleet, sample reservations, and default accounts.'}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  setPendingConfirm({
-                    title: 'Reset all demo data?',
-                    description:
-                      'This will permanently overwrite all custom vehicles, stations, reservations, and registered user accounts back to the initial Skopje defaults.',
-                    confirmLabel: 'Reset Data',
-                    action: onResetSystemData,
-                  })
-                }
+                onClick={() => {
+                  if (apiLive) {
+                    onResetSystemData();
+                  } else {
+                    setPendingConfirm({
+                      title: 'Reset local demo data?',
+                      description:
+                        'This will overwrite local offline changes back to the initial Skopje defaults.',
+                      confirmLabel: 'Reset Data',
+                      action: onResetSystemData,
+                    });
+                  }
+                }}
                 className="inline-flex items-center gap-1.5 rounded border border-[#0A1A33]/35 bg-[#F6F7F9] px-4 py-2 text-xs font-medium tracking-[0.12em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                RESET DEMO DATA
+                {apiLive ? 'SYNC FROM SERVER' : 'RESET DEMO DATA'}
               </button>
             </div>
           )}
@@ -463,64 +485,104 @@ export function AdminPage({
             onSubmit={handleCreateVehicle}
             className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-2 lg:grid-cols-6"
           >
-            <input
-              type="text"
-              aria-label="Vehicle model name"
-              placeholder="Model name (e.g. Rydio S2)"
-              value={newVehName}
-              onChange={(e) => setNewVehName(e.target.value)}
-              required
-              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33] lg:col-span-2"
-            />
-            <input
-              type="text"
-              aria-label="Vehicle code"
-              placeholder="Code (RYD-S09)"
-              value={newVehCode}
-              onChange={(e) => setNewVehCode(e.target.value)}
-              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
-            />
-            <select
-              aria-label="Vehicle type"
-              value={newVehTypeId}
-              onChange={(e) => setNewVehTypeId(e.target.value)}
-              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
-            >
-              {vehicleTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Initial station"
-              value={newVehStationId}
-              onChange={(e) => setNewVehStationId(e.target.value)}
-              className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
-            >
-              {stations.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                min={50}
-                step={10}
-                value={newVehRate}
-                onChange={(e) => setNewVehRate(Number(e.target.value))}
-                aria-label="Hourly rate in MKD"
-                className="tabular-nums w-24 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-2 text-sm text-[#0A1A33]"
-              />
-              <button
-                type="submit"
-                className="inline-flex flex-1 items-center justify-center gap-1 rounded bg-[#0A1A33] px-3 py-2 text-xs font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A]"
+            <div className="lg:col-span-2">
+              <label
+                htmlFor="add-veh-name"
+                className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
               >
-                <Plus className="h-3.5 w-3.5" />
-                ADD
-              </button>
+                MODEL NAME
+              </label>
+              <input
+                id="add-veh-name"
+                type="text"
+                placeholder="e.g. Rydio S2"
+                value={newVehName}
+                onChange={(e) => setNewVehName(e.target.value)}
+                required
+                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="add-veh-code"
+                className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              >
+                CODE
+              </label>
+              <input
+                id="add-veh-code"
+                type="text"
+                placeholder="RYD-S09"
+                value={newVehCode}
+                onChange={(e) => setNewVehCode(e.target.value)}
+                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="add-veh-type"
+                className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              >
+                TYPE
+              </label>
+              <select
+                id="add-veh-type"
+                value={newVehTypeId}
+                onChange={(e) => setNewVehTypeId(e.target.value)}
+                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              >
+                {vehicleTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="add-veh-station"
+                className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              >
+                STATION
+              </label>
+              <select
+                id="add-veh-station"
+                value={newVehStationId}
+                onChange={(e) => setNewVehStationId(e.target.value)}
+                className="w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              >
+                {stations.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="add-veh-rate"
+                className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              >
+                MKD / HR
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="add-veh-rate"
+                  type="number"
+                  min={50}
+                  step={10}
+                  value={newVehRate}
+                  onChange={(e) => setNewVehRate(Number(e.target.value))}
+                  className="tabular-nums w-20 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-2 text-sm text-[#0A1A33]"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex flex-1 items-center justify-center gap-1 rounded bg-[#0A1A33] px-3 py-2 text-xs font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  ADD
+                </button>
+              </div>
             </div>
           </form>
 
@@ -597,12 +659,12 @@ export function AdminPage({
                       </td>
                       <td className="px-4 py-3.5">
                         {v.inMaintenance ? (
-                          <span className="inline-flex items-center gap-1 rounded bg-[#FFF5F5] px-2.5 py-1 text-[11px] font-medium text-[#822020]">
+                          <span className="inline-flex items-center gap-1 rounded border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-medium text-[#991B1B]">
                             <Wrench className="h-3 w-3" />
                             In Service
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium text-[#0A1A33]">
+                          <span className="inline-flex items-center gap-1 rounded border border-[#A7F3D0] bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-[#065F46]">
                             <CheckCircle2 className="h-3 w-3" />
                             In Catalog
                           </span>
@@ -611,14 +673,23 @@ export function AdminPage({
                       <td className="px-4 py-3.5 text-right">
                         <div className="inline-flex items-center gap-1.5">
                           {isEditing ? (
-                            <button
-                              type="button"
-                              onClick={() => saveEditVehicle(v.id)}
-                              className="inline-flex items-center gap-1 rounded bg-[#0A1A33] px-2.5 py-1.5 text-[11px] font-medium text-white"
-                            >
-                              <Check className="h-3 w-3" />
-                              Save
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => saveEditVehicle(v.id)}
+                                className="inline-flex items-center gap-1 rounded bg-[#0A1A33] px-2.5 py-1.5 text-[11px] font-medium text-white"
+                              >
+                                <Check className="h-3 w-3" />
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingVehicleId(null)}
+                                className="rounded border border-[#DDE2E8] bg-white px-2 py-1.5 text-[11px] text-[#515F73] hover:text-[#0A1A33]"
+                              >
+                                Cancel
+                              </button>
+                            </>
                           ) : (
                             <button
                               type="button"
@@ -1076,34 +1147,51 @@ export function AdminPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DDE2E8]">
-                {filteredReservations.map((r) => {
-                  const veh = vehicles.find((v) => v.id === r.vehicleId);
-                  return (
-                    <tr key={r.id} className="hover:bg-[#F6F7F9]/60">
-                      <td className="tabular-nums px-4 py-3.5 text-xs font-medium text-[#0A1A33]">
-                        {r.id}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <p className="text-xs font-medium text-[#0A1A33]">{r.customerName}</p>
-                        <p className="text-[11px] text-[#515F73]">{r.customerEmail}</p>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs text-[#0A1A33]">{veh?.name ?? '—'}</td>
-                      <td className="tabular-nums px-4 py-3.5 text-xs text-[#515F73]">
-                        {formatShortDateTime(r.startTime)} → {formatShortDateTime(r.endTime)}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="rounded bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33]">
-                          {r.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="tabular-nums px-4 py-3.5 text-right text-xs font-semibold text-[#0A1A33]">
-                        {formatMkd(r.totalPriceMkd + r.latePenaltyMkd)}
-                        {r.latePenaltyMkd > 0 && (
-                          <span className="block text-[11px] font-normal text-[#822020]">
-                            +{formatMkd(r.latePenaltyMkd)} late
+                {filteredReservations.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-[#515F73]">
+                      No reservations match the current filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredReservations.map((r) => {
+                    const veh = vehicles.find((v) => v.id === r.vehicleId);
+                    return (
+                      <tr key={r.id} className="hover:bg-[#F6F7F9]/60">
+                        <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs font-medium text-[#0A1A33]">
+                          {r.id}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="text-xs font-medium text-[#0A1A33]">{r.customerName}</p>
+                          <p className="text-[11px] text-[#515F73]">{r.customerEmail}</p>
+                        </td>
+                        <td className="px-4 py-3.5 text-xs text-[#0A1A33]">{veh?.name ?? '—'}</td>
+                        <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs text-[#515F73]">
+                          {formatShortDateTime(r.startTime)} → {formatShortDateTime(r.endTime)}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span
+                            className={`rounded border px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] ${statusBadgeClass(r.status)}`}
+                          >
+                            {r.status.toUpperCase()}
                           </span>
-                        )}
-                      </td>
+                        </td>
+                        <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-right text-xs font-semibold text-[#0A1A33]">
+                          {r.status === 'Cancelled' ? (
+                            <span className="font-normal text-[#8C97A8] line-through">
+                              {formatMkd(r.totalPriceMkd)}
+                            </span>
+                          ) : (
+                            <>
+                              {formatMkd(r.totalPriceMkd + r.latePenaltyMkd)}
+                              {r.latePenaltyMkd > 0 && (
+                                <span className="block text-[11px] font-normal text-[#991B1B]">
+                                  +{formatMkd(r.latePenaltyMkd)} late
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </td>
                       <td className="px-4 py-3.5 text-right">
                         <div className="inline-flex items-center gap-1">
                           {r.status === 'Reserved' && (
@@ -1169,7 +1257,7 @@ export function AdminPage({
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>
@@ -1269,7 +1357,18 @@ export function AdminPage({
                           aria-label={`Role for ${u.name}`}
                           disabled={isSelf}
                           value={u.role}
-                          onChange={(e) => onUpdateUserRole(u.id, e.target.value as AccountRole)}
+                          onChange={(e) => {
+                            const nextRole = e.target.value as AccountRole;
+                            setPendingConfirm({
+                              title: `Change ${u.name}'s role to ${nextRole}?`,
+                              description:
+                                nextRole === 'SuperAdmin'
+                                  ? `Granting SuperAdmin gives ${u.email} unrestricted control over all users, roles, fleet, and reservations.`
+                                  : `This updates ${u.email} from ${u.role} to ${nextRole}.`,
+                              confirmLabel: `Set ${nextRole}`,
+                              action: () => onUpdateUserRole(u.id, nextRole),
+                            });
+                          }}
                           className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-50"
                         >
                           <option value="Customer">Customer</option>
@@ -1279,11 +1378,11 @@ export function AdminPage({
                       </td>
                       <td className="px-4 py-3.5">
                         {u.active ? (
-                          <span className="rounded bg-[#F6F7F9] px-2.5 py-1 text-[11px] font-medium text-[#0A1A33]">
+                          <span className="rounded border border-[#A7F3D0] bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-[#065F46]">
                             Active
                           </span>
                         ) : (
-                          <span className="rounded bg-[#FFF5F5] px-2.5 py-1 text-[11px] font-medium text-[#822020]">
+                          <span className="rounded border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-medium text-[#991B1B]">
                             Suspended
                           </span>
                         )}

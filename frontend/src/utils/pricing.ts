@@ -46,7 +46,8 @@ export function formatWindowDuration(startValue: string, endValue: string): stri
 }
 
 /**
- * Checks if a vehicle is available (not in maintenance and has no overlapping Reserved/Active reservation).
+ * Checks if a vehicle is available (not in maintenance, valid start < end window,
+ * and has no overlapping Reserved/Active reservation).
  */
 export function isVehicleAvailable(
   vehicle: Vehicle,
@@ -55,11 +56,11 @@ export function isVehicleAvailable(
   endIso: string | null
 ): boolean {
   if (vehicle.inMaintenance) return false;
-  if (!startIso || !endIso) return true;
+  if (!startIso || !endIso) return false;
   const start = new Date(startIso);
   const end = new Date(endIso);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-    return true;
+    return false;
   }
 
   return !reservations.some((res) => {
