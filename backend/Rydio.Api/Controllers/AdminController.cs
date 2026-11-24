@@ -24,6 +24,8 @@ public class AdminController(RydioDbContext db) : ControllerBase
         int MaxSpeedKmh = 25);
 
     public record UpdateVehicleRequest(
+        string? Code,
+        string? Name,
         string? StationId,
         int? HourlyRateMkd,
         int? FullDayRateMkd,
@@ -33,7 +35,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public record CreateTypeRequest(string Name, string Description, int DefaultHourlyRateMkd, int FullDayDiscountPercent = 20);
     public record UpdateTypeRequest(string? Name, string? Description, int? DefaultHourlyRateMkd, int? FullDayDiscountPercent);
     public record CreateStationRequest(string Code, string Name, string District, string Address, int Capacity);
-    public record UpdateStationRequest(string? Name, string? District, string? Address, int? Capacity);
+    public record UpdateStationRequest(string? Code, string? Name, string? District, string? Address, int? Capacity);
     public record UpdateReservationStatusRequest(string Status);
     public record CreateUserRequest(string Name, string Email, string Password, string Role);
     public record UpdateUserRoleRequest(string Role);
@@ -43,10 +45,28 @@ public class AdminController(RydioDbContext db) : ControllerBase
     [HttpPost("vehicles")]
     public async Task<IActionResult> AddVehicle([FromBody] CreateVehicleRequest req)
     {
+        var code = req.Code.Trim();
+        var name = req.Name.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Vehicle name is required." });
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest(new { message = "Vehicle fleet code is required." });
+        if (req.HourlyRateMkd < 50)
+            return BadRequest(new { message = "Hourly rate must be at least 50 MKD." });
+
+        var codeLower = code.ToLowerInvariant();
+        if (await db.Vehicles.AnyAsync(v => v.Code.ToLower() == codeLower))
+            return Conflict(new { message = $"Vehicle code \"{code}\" is already in use." });
+
+        var nameLower = name.ToLowerInvariant();
+        if (await db.Vehicles.AnyAsync(v => v.Name.ToLower() == nameLower))
+            return Conflict(new { message = $"A vehicle named \"{name}\" already exists." });
+
         var vehicle = new Vehicle
         {
-            Code = req.Code.Trim(),
-            Name = req.Name.Trim(),
+            Code = code,
+            Name = name,
             TypeId = req.TypeId,
             StationId = req.StationId,
             HourlyRateMkd = req.HourlyRateMkd,
@@ -65,11 +85,29 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public async Task<IActionResult> UpdateVehicle(string id, [FromBody] UpdateVehicleRequest req)
     {
         var vehicle = await db.Vehicles.FindAsync(id);
-        if (vehicle is null) return NotFound();
+        if (vehicle is null) return NotFound(new { message = "Vehicle not found." });
+
+        if (!string.IsNullOrWhiteSpace(req.Code))
+        {
+            var nextCode = req.Code.Trim();
+            var nextCodeLower = nextCode.ToLowerInvariant();
+            if (await db.Vehicles.AnyAsync(v => v.Id != id && v.Code.ToLower() == nextCodeLower))
+                return Conflict(new { message = $"Vehicle code \"{nextCode}\" is already in use." });
+            vehicle.Code = nextCode;
+        }
+
+        if (!string.IsNullOrWhiteSpace(req.Name))
+        {
+            var nextName = req.Name.Trim();
+            var nextNameLower = nextName.ToLowerInvariant();
+            if (await db.Vehicles.AnyAsync(v => v.Id != id && v.Name.ToLower() == nextNameLower))
+                return Conflict(new { message = $"A vehicle named \"{nextName}\" already exists." });
+            vehicle.Name = nextName;
+        }
 
         if (req.StationId is not null) vehicle.StationId = req.StationId;
-        if (req.HourlyRateMkd.HasValue) vehicle.HourlyRateMkd = req.HourlyRateMkd.Value;
-        if (req.FullDayRateMkd.HasValue) vehicle.FullDayRateMkd = req.FullDayRateMkd.Value;
+        if (req.HourlyRateMkd.HasValue) vehicle.HourlyRateMkd = Math.Max(50, req.HourlyRateMkd.Value);
+        if (req.FullDayRateMkd.HasValue) vehicle.FullDayRateMkd = Math.Max(50, req.FullDayRateMkd.Value);
         if (req.BatteryPercent.HasValue) vehicle.BatteryPercent = Math.Clamp(req.BatteryPercent.Value, 0, 100);
         if (req.InMaintenance.HasValue) vehicle.InMaintenance = req.InMaintenance.Value;
 
@@ -81,7 +119,10 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public async Task<IActionResult> DeleteVehicle(string id)
     {
         var vehicle = await db.Vehicles.FindAsync(id);
-        if (vehicle is null) return NotFound();
+        if (vehicle is null) return NotFound(new { message = "Vehicle not found." });
+        if (await db.Reservations.AnyAsync(r => r.VehicleId == id && (r.Status == "Reserved" || r.Status == "Active")))
+            return Conflict(new { message = "Cannot delete a vehicle while it has an active or upcoming reservation." });
+
         db.Vehicles.Remove(vehicle);
         await db.SaveChangesAsync();
         return NoContent();
@@ -91,12 +132,20 @@ public class AdminController(RydioDbContext db) : ControllerBase
     [HttpPost("types")]
     public async Task<IActionResult> AddType([FromBody] CreateTypeRequest req)
     {
+        var name = req.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Vehicle type name is required." });
+
+        var nameLower = name.ToLowerInvariant();
+        if (await db.VehicleTypes.AnyAsync(t => t.Name.ToLower() == nameLower))
+            return Conflict(new { message = $"Vehicle type \"{name}\" already exists." });
+
         var vt = new VehicleType
         {
-            Name = req.Name.Trim(),
+            Name = name,
             Description = req.Description.Trim(),
-            DefaultHourlyRateMkd = req.DefaultHourlyRateMkd,
-            FullDayDiscountPercent = req.FullDayDiscountPercent,
+            DefaultHourlyRateMkd = Math.Max(50, req.DefaultHourlyRateMkd),
+            FullDayDiscountPercent = Math.Clamp(req.FullDayDiscountPercent, 0, 90),
         };
         db.VehicleTypes.Add(vt);
         await db.SaveChangesAsync();
@@ -107,11 +156,18 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public async Task<IActionResult> UpdateType(string id, [FromBody] UpdateTypeRequest req)
     {
         var vt = await db.VehicleTypes.FindAsync(id);
-        if (vt is null) return NotFound();
+        if (vt is null) return NotFound(new { message = "Vehicle type not found." });
 
-        if (!string.IsNullOrWhiteSpace(req.Name)) vt.Name = req.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(req.Name))
+        {
+            var nextName = req.Name.Trim();
+            var nextNameLower = nextName.ToLowerInvariant();
+            if (await db.VehicleTypes.AnyAsync(t => t.Id != id && t.Name.ToLower() == nextNameLower))
+                return Conflict(new { message = $"Vehicle type \"{nextName}\" already exists." });
+            vt.Name = nextName;
+        }
         if (req.Description is not null) vt.Description = req.Description.Trim();
-        if (req.DefaultHourlyRateMkd.HasValue) vt.DefaultHourlyRateMkd = Math.Max(10, req.DefaultHourlyRateMkd.Value);
+        if (req.DefaultHourlyRateMkd.HasValue) vt.DefaultHourlyRateMkd = Math.Max(50, req.DefaultHourlyRateMkd.Value);
         if (req.FullDayDiscountPercent.HasValue) vt.FullDayDiscountPercent = Math.Clamp(req.FullDayDiscountPercent.Value, 0, 90);
 
         await db.SaveChangesAsync();
@@ -122,10 +178,10 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public async Task<IActionResult> DeleteType(string id)
     {
         if (await db.Vehicles.AnyAsync(v => v.TypeId == id))
-            return BadRequest(new { message = "Cannot delete type while vehicles are still assigned to it." });
+            return Conflict(new { message = "Cannot delete type while vehicles are still assigned to it." });
 
         var vt = await db.VehicleTypes.FindAsync(id);
-        if (vt is null) return NotFound();
+        if (vt is null) return NotFound(new { message = "Vehicle type not found." });
         db.VehicleTypes.Remove(vt);
         await db.SaveChangesAsync();
         return NoContent();
@@ -135,10 +191,25 @@ public class AdminController(RydioDbContext db) : ControllerBase
     [HttpPost("stations")]
     public async Task<IActionResult> AddStation([FromBody] CreateStationRequest req)
     {
+        var code = req.Code.Trim();
+        var name = req.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Station name is required." });
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest(new { message = "Station code is required." });
+
+        var codeLower = code.ToLowerInvariant();
+        if (await db.Stations.AnyAsync(s => s.Code.ToLower() == codeLower))
+            return Conflict(new { message = $"Station code \"{code}\" is already in use." });
+
+        var nameLower = name.ToLowerInvariant();
+        if (await db.Stations.AnyAsync(s => s.Name.ToLower() == nameLower))
+            return Conflict(new { message = $"Station \"{name}\" already exists." });
+
         var st = new Station
         {
-            Code = req.Code.Trim(),
-            Name = req.Name.Trim(),
+            Code = code,
+            Name = name,
             District = req.District.Trim(),
             Address = req.Address.Trim(),
             Capacity = Math.Max(1, req.Capacity),
@@ -152,9 +223,24 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public async Task<IActionResult> UpdateStation(string id, [FromBody] UpdateStationRequest req)
     {
         var st = await db.Stations.FindAsync(id);
-        if (st is null) return NotFound();
+        if (st is null) return NotFound(new { message = "Station not found." });
 
-        if (!string.IsNullOrWhiteSpace(req.Name)) st.Name = req.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(req.Code))
+        {
+            var nextCode = req.Code.Trim();
+            var nextCodeLower = nextCode.ToLowerInvariant();
+            if (await db.Stations.AnyAsync(s => s.Id != id && s.Code.ToLower() == nextCodeLower))
+                return Conflict(new { message = $"Station code \"{nextCode}\" is already in use." });
+            st.Code = nextCode;
+        }
+        if (!string.IsNullOrWhiteSpace(req.Name))
+        {
+            var nextName = req.Name.Trim();
+            var nextNameLower = nextName.ToLowerInvariant();
+            if (await db.Stations.AnyAsync(s => s.Id != id && s.Name.ToLower() == nextNameLower))
+                return Conflict(new { message = $"Station \"{nextName}\" already exists." });
+            st.Name = nextName;
+        }
         if (!string.IsNullOrWhiteSpace(req.District)) st.District = req.District.Trim();
         if (!string.IsNullOrWhiteSpace(req.Address)) st.Address = req.Address.Trim();
         if (req.Capacity.HasValue) st.Capacity = Math.Max(1, req.Capacity.Value);
@@ -206,9 +292,16 @@ public class AdminController(RydioDbContext db) : ControllerBase
     [HttpPost("users")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
     {
+        var name = req.Name.Trim();
         var email = req.Email.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Full name is required." });
+        if (!email.Contains('@'))
+            return BadRequest(new { message = "A valid email address is required." });
+        if (string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 6)
+            return BadRequest(new { message = "Password must be at least 6 characters." });
         if (await db.Users.AnyAsync(u => u.Email == email))
-            return Conflict(new { message = "An account with that email already exists." });
+            return Conflict(new { message = $"An account with email \"{email}\" already exists." });
 
         if (req.Role is not ("Customer" or "Admin" or "SuperAdmin"))
             return BadRequest(new { message = "Invalid role." });

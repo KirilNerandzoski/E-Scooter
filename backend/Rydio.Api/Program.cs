@@ -1,9 +1,11 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Rydio.Api.Data;
+using Rydio.Api.Middleware;
 using Rydio.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,7 +61,27 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+builder.Services
+    .AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var firstError = context.ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid input value." : e.ErrorMessage)
+                .FirstOrDefault() ?? "Invalid request parameters.";
+
+            return new BadRequestObjectResult(new
+            {
+                message = firstError,
+                code = "VALIDATION_ERROR",
+                status = StatusCodes.Status400BadRequest
+            });
+        };
+    });
 
 builder.Services.AddCors(opt =>
 {
@@ -85,6 +107,7 @@ using (var scope = app.Services.CreateScope())
     await DbSeeder.SeedAsync(db);
 }
 
+app.UseExceptionHandler();
 app.UseCors();
 app.UseDefaultFiles();
 app.UseStaticFiles();

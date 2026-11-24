@@ -207,10 +207,31 @@ export function App() {
   }, [apiLive, users, currentUserId, stations, vehicleTypes, vehicles, reservations]);
 
   useEffect(() => {
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      event.preventDefault();
+      const reason = event.reason;
+      const msg =
+        reason instanceof Error
+          ? reason.message
+          : typeof reason === 'string'
+            ? reason
+            : 'Service action failed unexpectedly.';
+      showToast(msg, 'error');
+    };
+
+    const onWindowError = (event: ErrorEvent) => {
+      if (!event.message || event.message.includes('ResizeObserver')) return;
+      showToast(event.message, 'error');
+    };
+
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    window.addEventListener('error', onWindowError);
     return () => {
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+      window.removeEventListener('error', onWindowError);
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
-  }, []);
+  }, [showToast]);
 
   const availabilityReservations = useMemo<Reservation[]>(() => {
     if (!apiLive) return reservations;
@@ -504,35 +525,68 @@ export function App() {
     );
   };
 
-  const handleAddVehicle = async (veh: Omit<Vehicle, 'id'>) => {
+  const handleAddVehicle = async (veh: Omit<Vehicle, 'id'>): Promise<boolean> => {
+    const codeNorm = veh.code.trim().toLowerCase();
+    const nameNorm = veh.name.trim().toLowerCase();
+    if (vehicles.some((v) => v.code.trim().toLowerCase() === codeNorm)) {
+      showToast(`Vehicle code "${veh.code.trim()}" is already in use.`, 'error');
+      return false;
+    }
+    if (vehicles.some((v) => v.name.trim().toLowerCase() === nameNorm)) {
+      showToast(`A vehicle named "${veh.name.trim()}" already exists.`, 'error');
+      return false;
+    }
+
     if (apiLive) {
       try {
         await addVehicleInApi(veh);
         await syncFromApi();
         showToast(`Added ${veh.name} to fleet.`);
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not add vehicle.', 'error');
+        return false;
       }
-      return;
     }
     const created: Vehicle = { ...veh, id: `veh-${Date.now()}` };
     setVehicles((prev) => [created, ...prev]);
     showToast(`Added ${created.name} to fleet.`);
+    return true;
   };
 
-  const handleUpdateVehicle = async (vehicleId: string, patch: Partial<Vehicle>) => {
+  const handleUpdateVehicle = async (
+    vehicleId: string,
+    patch: Partial<Vehicle>
+  ): Promise<boolean> => {
+    if (patch.code) {
+      const codeNorm = patch.code.trim().toLowerCase();
+      if (vehicles.some((v) => v.id !== vehicleId && v.code.trim().toLowerCase() === codeNorm)) {
+        showToast(`Vehicle code "${patch.code.trim()}" is already in use.`, 'error');
+        return false;
+      }
+    }
+    if (patch.name) {
+      const nameNorm = patch.name.trim().toLowerCase();
+      if (vehicles.some((v) => v.id !== vehicleId && v.name.trim().toLowerCase() === nameNorm)) {
+        showToast(`A vehicle named "${patch.name.trim()}" already exists.`, 'error');
+        return false;
+      }
+    }
+
     if (apiLive) {
       try {
         await updateVehicleInApi(vehicleId, patch);
         await syncFromApi();
         showToast('Vehicle details updated.');
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
+        return false;
       }
-      return;
     }
     setVehicles((prev) => prev.map((v) => (v.id === vehicleId ? { ...v, ...patch } : v)));
     showToast('Vehicle details updated.');
+    return true;
   };
 
   const handleDeleteVehicle = async (vehicleId: string) => {
@@ -547,38 +601,71 @@ export function App() {
       }
       return;
     }
+    const hasActiveBooking = reservations.some(
+      (r) => r.vehicleId === vehicleId && (r.status === 'Reserved' || r.status === 'Active')
+    );
+    if (hasActiveBooking) {
+      showToast(
+        'Cannot delete a vehicle while it has an active or upcoming reservation.',
+        'error'
+      );
+      return;
+    }
     setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
     showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
   };
 
-  const handleAddType = async (vt: Omit<VehicleType, 'id'>) => {
+  const handleAddType = async (vt: Omit<VehicleType, 'id'>): Promise<boolean> => {
+    const nameNorm = vt.name.trim().toLowerCase();
+    if (vehicleTypes.some((t) => t.name.trim().toLowerCase() === nameNorm)) {
+      showToast(`Vehicle type "${vt.name.trim()}" already exists.`, 'error');
+      return false;
+    }
+
     if (apiLive) {
       try {
         await addVehicleTypeInApi(vt);
         await syncFromApi();
         showToast(`Added vehicle type "${vt.name}".`);
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not add type.', 'error');
+        return false;
       }
-      return;
     }
     setVehicleTypes((prev) => [...prev, { ...vt, id: `vt-${Date.now()}` }]);
     showToast(`Added vehicle type "${vt.name}".`);
+    return true;
   };
 
-  const handleUpdateType = async (typeId: string, patch: Partial<VehicleType>) => {
+  const handleUpdateType = async (
+    typeId: string,
+    patch: Partial<VehicleType>
+  ): Promise<boolean> => {
+    if (patch.name) {
+      const nameNorm = patch.name.trim().toLowerCase();
+      if (
+        vehicleTypes.some((t) => t.id !== typeId && t.name.trim().toLowerCase() === nameNorm)
+      ) {
+        showToast(`Vehicle type "${patch.name.trim()}" already exists.`, 'error');
+        return false;
+      }
+    }
+
     if (apiLive) {
       try {
         await updateVehicleTypeInApi(typeId, patch);
         await syncFromApi();
         showToast('Vehicle type updated.');
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
+        return false;
       }
-      return;
     }
     setVehicleTypes((prev) => prev.map((t) => (t.id === typeId ? { ...t, ...patch } : t)));
     showToast('Vehicle type updated.');
+    return true;
   };
 
   const handleDeleteType = async (typeId: string) => {
@@ -601,34 +688,67 @@ export function App() {
     showToast('Vehicle type deleted.');
   };
 
-  const handleAddStation = async (st: Omit<Station, 'id'>) => {
+  const handleAddStation = async (st: Omit<Station, 'id'>): Promise<boolean> => {
+    const codeNorm = st.code.trim().toLowerCase();
+    const nameNorm = st.name.trim().toLowerCase();
+    if (stations.some((s) => s.code.trim().toLowerCase() === codeNorm)) {
+      showToast(`Station code "${st.code.trim()}" is already in use.`, 'error');
+      return false;
+    }
+    if (stations.some((s) => s.name.trim().toLowerCase() === nameNorm)) {
+      showToast(`Station "${st.name.trim()}" already exists.`, 'error');
+      return false;
+    }
+
     if (apiLive) {
       try {
         await addStationInApi(st);
         await syncFromApi();
         showToast(`Added station "${st.name}".`);
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not add station.', 'error');
+        return false;
       }
-      return;
     }
     setStations((prev) => [...prev, { ...st, id: `st-${Date.now()}` }]);
     showToast(`Added station "${st.name}".`);
+    return true;
   };
 
-  const handleUpdateStation = async (stationId: string, patch: Partial<Station>) => {
+  const handleUpdateStation = async (
+    stationId: string,
+    patch: Partial<Station>
+  ): Promise<boolean> => {
+    if (patch.code) {
+      const codeNorm = patch.code.trim().toLowerCase();
+      if (stations.some((s) => s.id !== stationId && s.code.trim().toLowerCase() === codeNorm)) {
+        showToast(`Station code "${patch.code.trim()}" is already in use.`, 'error');
+        return false;
+      }
+    }
+    if (patch.name) {
+      const nameNorm = patch.name.trim().toLowerCase();
+      if (stations.some((s) => s.id !== stationId && s.name.trim().toLowerCase() === nameNorm)) {
+        showToast(`Station "${patch.name.trim()}" already exists.`, 'error');
+        return false;
+      }
+    }
+
     if (apiLive) {
       try {
         await updateStationInApi(stationId, patch);
         await syncFromApi();
         showToast('Station updated.');
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
+        return false;
       }
-      return;
     }
     setStations((prev) => prev.map((s) => (s.id === stationId ? { ...s, ...patch } : s)));
     showToast('Station updated.');
+    return true;
   };
 
   const handleDeleteStation = async (stationId: string) => {
@@ -686,16 +806,25 @@ export function App() {
     showToast(`Reservation ${reservationId} removed.`);
   };
 
-  const handleCreateUser = async (user: Omit<UserAccount, 'id' | 'createdAt'>) => {
+  const handleCreateUser = async (
+    user: Omit<UserAccount, 'id' | 'createdAt'>
+  ): Promise<boolean> => {
+    const emailNorm = user.email.trim().toLowerCase();
+    if (users.some((u) => u.email.trim().toLowerCase() === emailNorm)) {
+      showToast(`An account with email "${emailNorm}" already exists.`, 'error');
+      return false;
+    }
+
     if (apiLive) {
       try {
         await createUserInApi(user);
         await syncFromApi();
         showToast(`Created ${user.role} account for ${user.name}.`);
+        return true;
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Could not create user.', 'error');
+        return false;
       }
-      return;
     }
     const created: UserAccount = {
       ...user,
@@ -704,6 +833,7 @@ export function App() {
     };
     setUsers((prev) => [...prev, created]);
     showToast(`Created ${created.role} account for ${created.name}.`);
+    return true;
   };
 
   const handleUpdateUserRole = async (userId: string, nextRole: AccountRole) => {
@@ -879,19 +1009,20 @@ export function App() {
             stations={stations}
             reservations={reservations}
             monthlyRevenue={monthlyRevenue}
+            onShowError={(msg) => showToast(msg, 'error')}
             onToggleMaintenance={(id) => void handleToggleMaintenance(id)}
-            onAddVehicle={(v) => void handleAddVehicle(v)}
-            onUpdateVehicle={(id, p) => void handleUpdateVehicle(id, p)}
+            onAddVehicle={handleAddVehicle}
+            onUpdateVehicle={handleUpdateVehicle}
             onDeleteVehicle={(id) => void handleDeleteVehicle(id)}
-            onAddType={(vt) => void handleAddType(vt)}
-            onUpdateType={(id, p) => void handleUpdateType(id, p)}
+            onAddType={handleAddType}
+            onUpdateType={handleUpdateType}
             onDeleteType={(id) => void handleDeleteType(id)}
-            onAddStation={(st) => void handleAddStation(st)}
-            onUpdateStation={(id, p) => void handleUpdateStation(id, p)}
+            onAddStation={handleAddStation}
+            onUpdateStation={handleUpdateStation}
             onDeleteStation={(id) => void handleDeleteStation(id)}
             onAdminSetReservationStatus={(id, st) => void handleAdminSetReservationStatus(id, st)}
             onDeleteReservation={(id) => void handleDeleteReservation(id)}
-            onCreateUser={(u) => void handleCreateUser(u)}
+            onCreateUser={handleCreateUser}
             onUpdateUserRole={(id, r) => void handleUpdateUserRole(id, r)}
             onToggleUserActive={(id) => void handleToggleUserActive(id)}
             onDeleteUser={(id) => void handleDeleteUser(id)}

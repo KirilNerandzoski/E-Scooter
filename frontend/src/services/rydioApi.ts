@@ -34,14 +34,42 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new Error('Service unreachable — check your connection or wait a moment and retry.');
+  }
+
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    let message =
+      res.status === 401
+        ? 'Your session has expired. Please sign in again.'
+        : res.status === 403
+          ? 'You do not have permission to perform this action.'
+          : res.status === 409
+            ? 'Duplicate entry conflicts with an existing record.'
+            : `Service request failed (${res.status}).`;
+
     try {
-      const body = (await res.json()) as { message?: string };
-      if (body.message) message = body.message;
+      const body = (await res.json()) as {
+        message?: string;
+        detail?: string;
+        title?: string;
+        errors?: Record<string, string[]>;
+      };
+      if (body.message) {
+        message = body.message;
+      } else if (body.errors) {
+        const firstErr = Object.values(body.errors).flat()[0];
+        if (firstErr) message = firstErr;
+      } else if (body.detail) {
+        message = body.detail;
+      } else if (body.title && !body.title.startsWith('One or more validation')) {
+        message = body.title;
+      }
     } catch {
-      // ignore parse error
+      // ignore non-JSON error body
     }
     throw new Error(message);
   }

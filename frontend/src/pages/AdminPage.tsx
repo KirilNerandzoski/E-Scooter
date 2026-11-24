@@ -35,19 +35,20 @@ interface AdminPageProps {
   stations: Station[];
   reservations: Reservation[];
   monthlyRevenue: MonthlyRevenuePoint[];
+  onShowError: (message: string) => void;
   onToggleMaintenance: (vehicleId: string) => void;
-  onAddVehicle: (vehicle: Omit<Vehicle, 'id'>) => void;
-  onUpdateVehicle: (vehicleId: string, patch: Partial<Vehicle>) => void;
+  onAddVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<boolean>;
+  onUpdateVehicle: (vehicleId: string, patch: Partial<Vehicle>) => Promise<boolean>;
   onDeleteVehicle: (vehicleId: string) => void;
-  onAddType: (vt: Omit<VehicleType, 'id'>) => void;
-  onUpdateType: (typeId: string, patch: Partial<VehicleType>) => void;
+  onAddType: (vt: Omit<VehicleType, 'id'>) => Promise<boolean>;
+  onUpdateType: (typeId: string, patch: Partial<VehicleType>) => Promise<boolean>;
   onDeleteType: (typeId: string) => void;
-  onAddStation: (station: Omit<Station, 'id'>) => void;
-  onUpdateStation: (stationId: string, patch: Partial<Station>) => void;
+  onAddStation: (station: Omit<Station, 'id'>) => Promise<boolean>;
+  onUpdateStation: (stationId: string, patch: Partial<Station>) => Promise<boolean>;
   onDeleteStation: (stationId: string) => void;
   onAdminSetReservationStatus: (reservationId: string, status: ReservationStatus) => void;
   onDeleteReservation: (reservationId: string) => void;
-  onCreateUser: (user: Omit<UserAccount, 'id' | 'createdAt'>) => void;
+  onCreateUser: (user: Omit<UserAccount, 'id' | 'createdAt'>) => Promise<boolean>;
   onUpdateUserRole: (userId: string, role: AccountRole) => void;
   onToggleUserActive: (userId: string) => void;
   onDeleteUser: (userId: string) => void;
@@ -72,6 +73,7 @@ export function AdminPage({
   stations,
   reservations,
   monthlyRevenue,
+  onShowError,
   onToggleMaintenance,
   onAddVehicle,
   onUpdateVehicle,
@@ -110,6 +112,8 @@ export function AdminPage({
 
   // Inline Vehicle Edit state
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [editVehName, setEditVehName] = useState('');
+  const [editVehCode, setEditVehCode] = useState('');
   const [editRate, setEditRate] = useState(180);
   const [editStationId, setEditStationId] = useState('');
   const [editBattery, setEditBattery] = useState(90);
@@ -126,6 +130,7 @@ export function AdminPage({
   const [editTypeRate, setEditTypeRate] = useState(180);
 
   // Add Station form
+  const [newStationCode, setNewStationCode] = useState('');
   const [newStationName, setNewStationName] = useState('');
   const [newStationDistrict, setNewStationDistrict] = useState('Centar');
   const [newStationAddress, setNewStationAddress] = useState('');
@@ -133,6 +138,7 @@ export function AdminPage({
 
   // Inline Station Edit state
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [editStationCode, setEditStationCode] = useState('');
   const [editStationName, setEditStationName] = useState('');
   const [editStationDistrict, setEditStationDistrict] = useState('');
   const [editStationAddress, setEditStationAddress] = useState('');
@@ -198,41 +204,73 @@ export function AdminPage({
   const getStationName = (id?: string) => stations.find((s) => s.id === id)?.name ?? '—';
   const getTypeName = (id: string) => vehicleTypes.find((t) => t.id === id)?.name ?? '—';
 
-  const handleCreateVehicle = (e: React.FormEvent) => {
+  const nextUnusedCode = (prefix: string, existingCodes: string[], startNum: number) => {
+    const taken = new Set(existingCodes.map((c) => c.trim().toLowerCase()));
+    let n = startNum;
+    while (taken.has(`${prefix}${String(n).padStart(2, '0')}`.toLowerCase())) {
+      n += 1;
+    }
+    return `${prefix}${String(n).padStart(2, '0')}`;
+  };
+
+  const handleCreateVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newVehName.trim()) return;
-    onAddVehicle({
-      code: newVehCode.trim() || `RYD-${vehicles.length + 10}`,
+    if (!newVehName.trim()) {
+      onShowError('Vehicle name is required.');
+      return;
+    }
+    const code =
+      newVehCode.trim() ||
+      nextUnusedCode(
+        'RYD-',
+        vehicles.map((v) => v.code),
+        vehicles.length + 1
+      );
+
+    const ok = await onAddVehicle({
+      code,
       name: newVehName.trim(),
       typeId: newVehTypeId || vehicleTypes[0]?.id || '',
       stationId: newVehStationId || stations[0]?.id || '',
-      hourlyRateMkd: newVehRate,
-      fullDayRateMkd: Math.round(newVehRate * 5.4),
+      hourlyRateMkd: Math.max(50, newVehRate),
+      fullDayRateMkd: Math.round(Math.max(50, newVehRate) * 5.4),
       batteryPercent: 100,
       rangeKm: 50,
       maxSpeedKmh: 25,
       inMaintenance: false,
     });
-    setNewVehName('');
-    setNewVehCode('');
+    if (ok) {
+      setNewVehName('');
+      setNewVehCode('');
+    }
   };
 
   const startEditVehicle = (v: Vehicle) => {
     setEditingVehicleId(v.id);
+    setEditVehName(v.name);
+    setEditVehCode(v.code);
     setEditRate(v.hourlyRateMkd);
     setEditStationId(v.stationId);
     setEditBattery(v.batteryPercent);
   };
 
-  const saveEditVehicle = (vehicleId: string) => {
+  const saveEditVehicle = async (vehicleId: string) => {
+    if (!editVehName.trim() || !editVehCode.trim()) {
+      onShowError('Vehicle name and fleet code cannot be empty.');
+      return;
+    }
     const safeRate = Math.max(50, Number.isFinite(editRate) ? editRate : 180);
-    onUpdateVehicle(vehicleId, {
+    const ok = await onUpdateVehicle(vehicleId, {
+      name: editVehName.trim(),
+      code: editVehCode.trim(),
       hourlyRateMkd: safeRate,
       fullDayRateMkd: Math.round(safeRate * 5.4),
       stationId: editStationId,
       batteryPercent: Math.max(0, Math.min(100, Number.isFinite(editBattery) ? editBattery : 100)),
     });
-    setEditingVehicleId(null);
+    if (ok) {
+      setEditingVehicleId(null);
+    }
   };
 
   const statusBadgeClass = (status: ReservationStatus) => {
@@ -248,59 +286,80 @@ export function AdminPage({
     }
   };
 
-  const handleCreateType = (e: React.FormEvent) => {
+  const handleCreateType = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTypeName.trim()) return;
-    onAddType({
+    if (!newTypeName.trim()) {
+      onShowError('Vehicle type name is required.');
+      return;
+    }
+    const ok = await onAddType({
       name: newTypeName.trim(),
       description: newTypeDesc.trim() || 'Urban electric mobility vehicle.',
-      defaultHourlyRateMkd: newTypeRate,
+      defaultHourlyRateMkd: Math.max(50, newTypeRate),
       fullDayDiscountPercent: 20,
     });
-    setNewTypeName('');
-    setNewTypeDesc('');
+    if (ok) {
+      setNewTypeName('');
+      setNewTypeDesc('');
+    }
   };
 
-  const handleCreateStation = (e: React.FormEvent) => {
+  const handleCreateStation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStationName.trim()) return;
-    onAddStation({
-      code: `SKP-${String(stations.length + 1).padStart(2, '0')}`,
+    if (!newStationName.trim()) {
+      onShowError('Station name is required.');
+      return;
+    }
+    const code =
+      newStationCode.trim() ||
+      nextUnusedCode(
+        'SKP-',
+        stations.map((s) => s.code),
+        stations.length + 1
+      );
+
+    const ok = await onAddStation({
+      code,
       name: newStationName.trim(),
       district: newStationDistrict.trim() || 'Centar',
       address: newStationAddress.trim() || 'Skopje Mobility Dock',
-      capacity: newStationCapacity,
+      capacity: Math.max(1, newStationCapacity),
     });
-    setNewStationName('');
-    setNewStationAddress('');
+    if (ok) {
+      setNewStationCode('');
+      setNewStationName('');
+      setNewStationAddress('');
+    }
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserFormError(null);
     if (!newUserName.trim() || !newUserEmail.trim()) {
-      setUserFormError('Full name and email address are required.');
+      const msg = 'Full name and email address are required.';
+      setUserFormError(msg);
+      onShowError(msg);
       return;
     }
     if (newUserPassword.length < 6) {
-      setUserFormError('Password must be at least 6 characters.');
+      const msg = 'Password must be at least 6 characters.';
+      setUserFormError(msg);
+      onShowError(msg);
       return;
     }
-    if (users.some((u) => u.email.toLowerCase() === newUserEmail.trim().toLowerCase())) {
-      setUserFormError('An account with that email already exists.');
-      return;
-    }
-    onCreateUser({
+    const ok = await onCreateUser({
       name: newUserName.trim(),
       email: newUserEmail.trim().toLowerCase(),
       password: newUserPassword,
       role: newUserRole,
       active: true,
     });
-    setNewUserName('');
-    setNewUserEmail('');
-    setNewUserPassword('');
-    setNewUserRole('Customer');
+    if (ok) {
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setNewUserRole('Customer');
+    }
   };
 
   const tabs: [AdminSection, string][] = [
@@ -482,7 +541,8 @@ export function AdminPage({
       {section === 'vehicles' && (
         <div className="mt-8 space-y-6">
           <form
-            onSubmit={handleCreateVehicle}
+            noValidate
+            onSubmit={(e) => void handleCreateVehicle(e)}
             className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-2 lg:grid-cols-6"
           >
             <div className="lg:col-span-2">
@@ -604,8 +664,29 @@ export function AdminPage({
                   return (
                     <tr key={v.id} className="hover:bg-[#F6F7F9]/60">
                       <td className="px-4 py-3.5">
-                        <p className="font-medium text-[#0A1A33]">{v.name}</p>
-                        <p className="tabular-nums text-xs text-[#515F73]">{v.code}</p>
+                        {isEditing ? (
+                          <div className="space-y-1.5">
+                            <input
+                              type="text"
+                              aria-label={`Edit name for ${v.name}`}
+                              value={editVehName}
+                              onChange={(e) => setEditVehName(e.target.value)}
+                              className="w-full rounded border border-[#0A1A33] bg-white px-2 py-1 text-xs font-medium text-[#0A1A33]"
+                            />
+                            <input
+                              type="text"
+                              aria-label={`Edit fleet code for ${v.name}`}
+                              value={editVehCode}
+                              onChange={(e) => setEditVehCode(e.target.value)}
+                              className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2 py-1 text-[11px] text-[#0A1A33]"
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <p className="font-medium text-[#0A1A33]">{v.name}</p>
+                            <p className="tabular-nums text-xs text-[#515F73]">{v.code}</p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 text-xs text-[#515F73]">
                         {getTypeName(v.typeId)}
@@ -676,7 +757,7 @@ export function AdminPage({
                             <>
                               <button
                                 type="button"
-                                onClick={() => saveEditVehicle(v.id)}
+                                onClick={() => void saveEditVehicle(v.id)}
                                 className="inline-flex items-center gap-1 rounded bg-[#0A1A33] px-2.5 py-1.5 text-[11px] font-medium text-white"
                               >
                                 <Check className="h-3 w-3" />
@@ -737,7 +818,8 @@ export function AdminPage({
       {section === 'types' && (
         <div className="mt-8 space-y-6">
           <form
-            onSubmit={handleCreateType}
+            noValidate
+            onSubmit={(e) => void handleCreateType(e)}
             className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-4"
           >
             <input
@@ -813,13 +895,17 @@ export function AdminPage({
                         <span className="text-xs text-[#515F73]">MKD / hr</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            onUpdateType(t.id, {
-                              name: editTypeName.trim() || t.name,
+                          onClick={async () => {
+                            if (!editTypeName.trim()) {
+                              onShowError('Vehicle type name cannot be empty.');
+                              return;
+                            }
+                            const ok = await onUpdateType(t.id, {
+                              name: editTypeName.trim(),
                               description: editTypeDesc.trim(),
-                              defaultHourlyRateMkd: editTypeRate,
+                              defaultHourlyRateMkd: Math.max(50, editTypeRate),
                             });
-                            setEditingTypeId(null);
+                            if (ok) setEditingTypeId(null);
                           }}
                           className="ml-auto inline-flex items-center gap-1 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#1E2D4A]"
                         >
@@ -889,8 +975,9 @@ export function AdminPage({
       {section === 'stations' && (
         <div className="mt-8 space-y-6">
           <form
-            onSubmit={handleCreateStation}
-            className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-5"
+            noValidate
+            onSubmit={(e) => void handleCreateStation(e)}
+            className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 sm:grid-cols-6"
           >
             <input
               type="text"
@@ -900,6 +987,14 @@ export function AdminPage({
               onChange={(e) => setNewStationName(e.target.value)}
               required
               className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            />
+            <input
+              type="text"
+              aria-label="Station code"
+              placeholder="Code (e.g. SKP-07)"
+              value={newStationCode}
+              onChange={(e) => setNewStationCode(e.target.value)}
+              className="tabular-nums rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
             />
             <input
               type="text"
@@ -946,9 +1041,13 @@ export function AdminPage({
                 >
                   {isEditing ? (
                     <div className="flex-1 space-y-2">
-                      <span className="tabular-nums text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
-                        {s.code}
-                      </span>
+                      <input
+                        type="text"
+                        aria-label={`Edit code for ${s.name}`}
+                        value={editStationCode}
+                        onChange={(e) => setEditStationCode(e.target.value)}
+                        className="tabular-nums w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1 text-xs font-medium tracking-[0.1em] text-[#0A1A33]"
+                      />
                       <input
                         type="text"
                         aria-label={`Edit name for ${s.name}`}
@@ -982,14 +1081,19 @@ export function AdminPage({
                         <span className="text-xs text-[#515F73]">docks</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            onUpdateStation(s.id, {
-                              name: editStationName.trim() || s.name,
+                          onClick={async () => {
+                            if (!editStationName.trim() || !editStationCode.trim()) {
+                              onShowError('Station name and code cannot be empty.');
+                              return;
+                            }
+                            const ok = await onUpdateStation(s.id, {
+                              code: editStationCode.trim(),
+                              name: editStationName.trim(),
                               district: editStationDistrict.trim() || s.district,
                               address: editStationAddress.trim() || s.address,
                               capacity: Math.max(1, editStationCapacity),
                             });
-                            setEditingStationId(null);
+                            if (ok) setEditingStationId(null);
                           }}
                           className="ml-auto inline-flex items-center gap-1 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#1E2D4A]"
                         >
@@ -1025,6 +1129,7 @@ export function AdminPage({
                         aria-label={`Edit ${s.name}`}
                         onClick={() => {
                           setEditingStationId(s.id);
+                          setEditStationCode(s.code);
                           setEditStationName(s.name);
                           setEditStationDistrict(s.district);
                           setEditStationAddress(s.address);
@@ -1268,7 +1373,8 @@ export function AdminPage({
       {section === 'users' && isSuperAdmin && (
         <div className="mt-8 space-y-6">
           <form
-            onSubmit={handleCreateUser}
+            noValidate
+            onSubmit={(e) => void handleCreateUser(e)}
             className="space-y-3 rounded-lg border border-[#DDE2E8] bg-white p-5"
           >
             {userFormError && (
