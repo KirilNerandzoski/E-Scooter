@@ -261,7 +261,7 @@ export function LeftRail({
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-[11px] font-medium tracking-[0.1em] text-[#515F73]">
-                FREE NOW
+                FREE
               </span>
               <span className="tabular-nums text-xs font-semibold text-[#0A1A33]">
                 {freeFleetCount}

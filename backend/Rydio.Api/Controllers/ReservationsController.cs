@@ -30,10 +30,15 @@ public class ReservationsController(RydioDbContext db) : ControllerBase
         var pricing = PricingService.Calculate(vehicle, req.StartTime, req.EndTime);
         if (!pricing.Valid) return BadRequest(new { message = pricing.Error });
 
+        var now = DateTimeOffset.UtcNow;
         var hasOverlap = await db.Reservations.AnyAsync(r =>
             r.VehicleId == vehicle.Id &&
-            (r.Status == "Reserved" || r.Status == "Active") &&
-            r.StartTime < req.EndTime && req.StartTime < r.EndTime);
+            (
+                (r.Status == "Reserved" && r.StartTime < req.EndTime && req.StartTime < r.EndTime) ||
+                (r.Status == "Active" &&
+                    (r.StartTime < req.EndTime || now < req.EndTime) &&
+                    (req.StartTime < r.EndTime || req.StartTime < now))
+            ));
 
         if (hasOverlap)
             return Conflict(new { message = "This vehicle already has an overlapping reservation in that window." });

@@ -275,12 +275,22 @@ export function App() {
   };
 
   const freeNowCount = useMemo(() => {
-    const nowIso = new Date().toISOString();
-    const soonIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const startIso = toSafeIso(filterStart);
+    const endIso = toSafeIso(filterEnd);
+    const hasValidWindow =
+      startIso !== null &&
+      endIso !== null &&
+      new Date(endIso).getTime() > new Date(startIso).getTime();
+
+    const checkStart = hasValidWindow ? startIso : new Date().toISOString();
+    const checkEnd = hasValidWindow
+      ? endIso
+      : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
     return vehicles.filter((v) =>
-      isVehicleAvailable(v, availabilityReservations, nowIso, soonIso)
+      isVehicleAvailable(v, availabilityReservations, checkStart, checkEnd)
     ).length;
-  }, [vehicles, availabilityReservations]);
+  }, [vehicles, availabilityReservations, filterStart, filterEnd]);
 
   const windowFreeCount = useMemo(() => {
     const startIso = toSafeIso(filterStart);
@@ -344,6 +354,8 @@ export function App() {
           endTime: payload.endTime,
         });
         await syncFromApi();
+        setFilterStart(toLocalDateTimeInput(new Date(payload.startTime)));
+        setFilterEnd(toLocalDateTimeInput(new Date(payload.endTime)));
         setBookingVehicle(null);
         setActiveTab('my-rides');
         showToast(`Reserved ${vehicle.name} (${created.id}).`);
@@ -374,6 +386,8 @@ export function App() {
     };
 
     setReservations((prev) => [newRes, ...prev]);
+    setFilterStart(toLocalDateTimeInput(new Date(payload.startTime)));
+    setFilterEnd(toLocalDateTimeInput(new Date(payload.endTime)));
     setBookingVehicle(null);
     setActiveTab('my-rides');
     showToast(`Reserved ${vehicle.name} (${newRes.id}).`);

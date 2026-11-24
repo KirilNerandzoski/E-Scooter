@@ -53,7 +53,8 @@ export function isVehicleAvailable(
   vehicle: Vehicle,
   reservations: Reservation[],
   startIso: string | null,
-  endIso: string | null
+  endIso: string | null,
+  now: Date = new Date()
 ): boolean {
   if (vehicle.inMaintenance) return false;
   if (!startIso || !endIso) return false;
@@ -63,10 +64,18 @@ export function isVehicleAvailable(
     return false;
   }
 
+  const nowMs = now.getTime();
   return !reservations.some((res) => {
     if (res.vehicleId !== vehicle.id) return false;
     if (res.status === 'Cancelled' || res.status === 'Completed') return false;
-    return rangesOverlap(start, end, new Date(res.startTime), new Date(res.endTime));
+    const resStartMs = new Date(res.startTime).getTime();
+    const resEndMs = new Date(res.endTime).getTime();
+    if (res.status === 'Active') {
+      const effectiveStart = new Date(Math.min(resStartMs, nowMs));
+      const effectiveEnd = new Date(Math.max(resEndMs, nowMs + 60 * 60 * 1000));
+      return rangesOverlap(start, end, effectiveStart, effectiveEnd);
+    }
+    return rangesOverlap(start, end, new Date(resStartMs), new Date(resEndMs));
   });
 }
 

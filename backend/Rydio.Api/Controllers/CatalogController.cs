@@ -117,9 +117,13 @@ public class CatalogController(RydioDbContext db) : ControllerBase
 
         if (start.HasValue && end.HasValue && end > start)
         {
+            var s = start.Value.ToUniversalTime();
+            var e = end.Value.ToUniversalTime();
+            var now = DateTimeOffset.UtcNow;
             var busyIds = await db.Reservations
-                .Where(r => (r.Status == "Reserved" || r.Status == "Active") &&
-                            r.StartTime < end.Value && start.Value < r.EndTime)
+                .Where(r =>
+                    (r.Status == "Reserved" && r.StartTime < e && s < r.EndTime) ||
+                    (r.Status == "Active" && (r.StartTime < e || now < e) && (s < r.EndTime || s < now)))
                 .Select(r => r.VehicleId)
                 .Distinct()
                 .ToListAsync();
