@@ -12,6 +12,8 @@ using Rydio.Api.Security;
 using Rydio.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 static string ResolvePostgresConnectionString(IConfiguration config)
 {
@@ -180,7 +182,14 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "rydio-dotnet10-api" }));
 app.MapControllers();
+app.Map("/api/{**slug}", () => Results.NotFound(new
+{
+    message = "API endpoint not found.",
+    code = "NOT_FOUND",
+    status = StatusCodes.Status404NotFound
+}));
 app.MapFallbackToFile("index.html");
 
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-app.Run($"http://0.0.0.0:{port}");
+app.Run();
+
+public partial class Program { }

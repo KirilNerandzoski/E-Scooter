@@ -10,6 +10,11 @@ public static class DbSeeder
     {
         await db.Database.EnsureCreatedAsync();
 
+        if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            await EnsurePostgresSchemaEvolutionAsync(db);
+        }
+
         if (!await db.Stations.AnyAsync())
         {
             db.Stations.AddRange(
@@ -123,5 +128,73 @@ public static class DbSeeder
             );
             await db.SaveChangesAsync();
         }
+    }
+
+    /// <summary>
+    /// Safely upgrades pre-existing PostgreSQL deployments where EnsureCreatedAsync was previously used:
+    /// adds Reservations.VehicleName, makes Reservations.VehicleId nullable, switches FK from CASCADE to SET NULL,
+    /// and ensures unique indexes on Vehicles.Name and Stations.Name.
+    /// </summary>
+    private static async Task EnsurePostgresSchemaEvolutionAsync(RydioDbContext db)
+    {
+        const string sql = """
+            ALTER TABLE "Reservations" ADD COLUMN IF NOT EXISTS "VehicleName" text NOT NULL DEFAULT '';
+
+            UPDATE "Reservations" r
+            SET "VehicleName" = v."Name"
+            FROM "Vehicles" v
+            WHERE r."VehicleId" = v."Id"
+              AND (r."VehicleName" IS NULL OR r."VehicleName" = '');
+
+            ALTER TABLE "Reservations" ALTER COLUMN "VehicleId" DROP NOT NULL;
+
+            DO $$
+            DECLARE
+                fk_name text;
+            BEGIN
+                FOR fk_name IN
+                    SELECT c.conname
+                    FROM pg_constraint c
+                    WHERE c.conrelid = '"Reservations"'::regclass
+                      AND c.confrelid = '"Vehicles"'::regclass
+                      AND c.contype = 'f'
+                      AND c.confdeltype <> 'n'
+                LOOP
+                    EXECUTE format('ALTER TABLE "Reservations" DROP CONSTRAINT %I', fk_name);
+                END LOOP;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint c
+                    WHERE c.conrelid = '"Reservations"'::regclass
+                      AND c.confrelid = '"Vehicles"'::regclass
+                      AND c.contype = 'f'
+                      AND c.confdeltype = 'n'
+                ) THEN
+                    ALTER TABLE "Reservations"
+                        ADD CONSTRAINT "FK_Reservations_Vehicles_VehicleId"
+                        FOREIGN KEY ("VehicleId") REFERENCES "Vehicles" ("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Vehicles_Name" ON "Vehicles" ("Name");
+            EXCEPTION WHEN unique_violation THEN
+                RAISE WARNING 'Skipped IX_Vehicles_Name creation due to pre-existing duplicate rows.';
+            END $$;
+
+            DO $$
+            BEGIN
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Stations_Name" ON "Stations" ("Name");
+            EXCEPTION WHEN unique_violation THEN
+                RAISE WARNING 'Skipped IX_Stations_Name creation due to pre-existing duplicate rows.';
+            END $$;
+
+            CREATE INDEX IF NOT EXISTS "IX_Reservations_VehicleId_Status_StartTime_EndTime"
+                ON "Reservations" ("VehicleId", "Status", "StartTime", "EndTime");
+            """;
+
+        await db.Database.ExecuteSqlRawAsync(sql);
     }
 }

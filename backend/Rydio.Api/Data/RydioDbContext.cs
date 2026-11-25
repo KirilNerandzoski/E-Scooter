@@ -24,6 +24,7 @@ public class RydioDbContext(DbContextOptions<RydioDbContext> options) : DbContex
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Code).IsUnique();
+            e.HasIndex(x => x.Name).IsUnique();
         });
 
         modelBuilder.Entity<VehicleType>(e =>
@@ -36,6 +37,7 @@ public class RydioDbContext(DbContextOptions<RydioDbContext> options) : DbContex
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Code).IsUnique();
+            e.HasIndex(x => x.Name).IsUnique();
             e.HasOne(x => x.Type)
                 .WithMany()
                 .HasForeignKey(x => x.TypeId)
@@ -49,10 +51,12 @@ public class RydioDbContext(DbContextOptions<RydioDbContext> options) : DbContex
         modelBuilder.Entity<Reservation>(e =>
         {
             e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.VehicleId, x.Status, x.StartTime, x.EndTime });
             e.HasOne(x => x.Vehicle)
                 .WithMany()
                 .HasForeignKey(x => x.VehicleId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<MonthlyRevenueRecord>(e =>

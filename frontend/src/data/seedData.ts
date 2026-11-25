@@ -240,8 +240,9 @@ const addHours = (h: number) => new Date(now.getTime() + h * 60 * 60 * 1000).toI
 
 export const INITIAL_RESERVATIONS: Reservation[] = [
   {
-    id: 'RES-1042',
+    id: 'RES-A1042F10',
     vehicleId: 'veh-s1-air',
+    vehicleName: 'Rydio S1 Air',
     customerName: 'Kiril Petrov',
     customerEmail: 'kiril@rydio.mk',
     pickupStationId: 'st-plostad',
@@ -255,8 +256,9 @@ export const INITIAL_RESERVATIONS: Reservation[] = [
     createdAt: addHours(-5),
   },
   {
-    id: 'RES-1045',
+    id: 'RES-B1045C20',
     vehicleId: 'veh-city-ebike',
+    vehicleName: 'Rydio City E-Bike',
     customerName: 'Kiril Petrov',
     customerEmail: 'kiril@rydio.mk',
     pickupStationId: 'st-park',
@@ -270,8 +272,9 @@ export const INITIAL_RESERVATIONS: Reservation[] = [
     createdAt: addHours(-2),
   },
   {
-    id: 'RES-1031',
+    id: 'RES-C1031D30',
     vehicleId: 'veh-s1-pro',
+    vehicleName: 'Rydio S1 Pro',
     customerName: 'Kiril Petrov',
     customerEmail: 'kiril@rydio.mk',
     pickupStationId: 'st-plostad',
@@ -287,8 +290,9 @@ export const INITIAL_RESERVATIONS: Reservation[] = [
     createdAt: addHours(-52),
   },
   {
-    id: 'RES-1028',
+    id: 'RES-D1028E40',
     vehicleId: 'veh-cargo-ebike',
+    vehicleName: 'Rydio Cargo E-Bike',
     customerName: 'Elena Stojanova',
     customerEmail: 'elena@example.mk',
     pickupStationId: 'st-eastgate',
@@ -304,8 +308,9 @@ export const INITIAL_RESERVATIONS: Reservation[] = [
     createdAt: addHours(-100),
   },
   {
-    id: 'RES-1019',
+    id: 'RES-E1019F50',
     vehicleId: 'veh-lite-01',
+    vehicleName: 'Rydio Lite Scooter',
     customerName: 'Marko Nikolov',
     customerEmail: 'marko@example.mk',
     pickupStationId: 'st-debar',

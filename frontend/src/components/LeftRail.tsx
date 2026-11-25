@@ -10,6 +10,7 @@ import {
   LogIn,
   LogOut,
   ShieldCheck,
+  UserPlus,
 } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
 import { canAccessAdminPanel, isPrimarySuperAdmin } from '../utils/rbac';
@@ -38,12 +39,12 @@ const NAV_ITEMS: { id: NavTab; label: string; icon: typeof Home }[] = [
 function RydioMark() {
   return (
     <svg
-      width="34"
-      height="34"
+      width="32"
+      height="32"
       viewBox="0 0 36 36"
       fill="none"
       aria-hidden="true"
-      className="shrink-0"
+      className="shrink-0 sm:h-[34px] sm:w-[34px]"
     >
       <circle cx="18" cy="18" r="16.5" stroke="#0A1A33" strokeWidth="1.4" />
       <path
@@ -78,11 +79,17 @@ export function LeftRail({
 
   useEffect(() => {
     if (!mobileOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMobileOpen(false);
     };
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [mobileOpen]);
 
   const isPrivileged = canAccessAdminPanel(currentUser);
@@ -100,61 +107,60 @@ export function LeftRail({
   return (
     <>
       {/* Mobile Header */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#DDE2E8] bg-[#F6F7F9]/95 px-4 py-3 backdrop-blur-sm lg:hidden">
+      <header className="sticky top-0 z-30 flex h-[58px] items-center justify-between gap-2 border-b border-[#DDE2E8] bg-[#F6F7F9]/95 px-3.5 backdrop-blur-sm sm:px-5 lg:hidden">
         <button
           type="button"
           onClick={() => handleNavClick('home')}
-          className="flex items-center gap-2.5 text-left"
+          className="flex min-h-[40px] items-center gap-2 text-left"
         >
           <RydioMark />
-          <span className="font-display text-sm font-medium tracking-[0.26em] text-[#0A1A33]">
+          <span className="font-display text-[13px] font-medium tracking-[0.22em] text-[#0A1A33] sm:text-sm sm:tracking-[0.26em]">
             RYDIO
           </span>
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {currentUser ? (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#0A1A33]"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign Out
-            </button>
+            <span className="hidden rounded border border-[#DDE2E8] bg-white px-2 py-1 text-[10px] font-semibold tracking-[0.1em] text-[#0A1A33] min-[370px]:inline-flex min-[370px]:items-center min-[370px]:gap-1">
+              {isPrimarySuperAdmin(currentUser) && <ShieldCheck className="h-3 w-3 shrink-0" />}
+              {currentUser.role.toUpperCase()}
+            </span>
           ) : (
             <button
               type="button"
-              onClick={() => onOpenAuth('login')}
-              className="inline-flex items-center gap-1.5 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-white"
+              onClick={() => {
+                setMobileOpen(false);
+                onOpenAuth('login');
+              }}
+              className="inline-flex min-h-[38px] items-center gap-1.5 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-white"
             >
               SIGN IN
             </button>
           )}
           <button
             type="button"
-            aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
+            aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={mobileOpen}
             aria-controls="mobile-nav-drawer"
             onClick={() => setMobileOpen((prev) => !prev)}
-            className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#0A1A33]"
+            className="inline-flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-[#DDE2E8] bg-white p-2 text-[#0A1A33]"
           >
             {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
         </div>
       </header>
 
-      {/* Mobile Drawer + Dimmed Backdrop */}
+      {/* Mobile Drawer + Dimmed Backdrop Scrim */}
       {mobileOpen && (
         <>
           <div
             aria-hidden="true"
             onClick={() => setMobileOpen(false)}
-            className="fixed inset-0 top-[59px] z-20 bg-[#0A1A33]/30 lg:hidden"
+            className="rydio-backdrop-enter fixed inset-0 top-[58px] z-20 bg-[#0A1A33]/40 backdrop-blur-[2px] lg:hidden"
           />
           <nav
             id="mobile-nav-drawer"
             aria-label="Mobile navigation"
-            className="fixed inset-x-0 top-[59px] z-30 border-b border-[#DDE2E8] bg-[#F6F7F9] px-4 py-4 shadow-lg lg:hidden"
+            className="rydio-drawer-enter pb-safe fixed inset-x-0 top-[58px] z-30 max-h-[calc(100dvh-58px)] overflow-y-auto border-b border-[#DDE2E8] bg-[#F6F7F9] px-4 pt-4 shadow-xl lg:hidden"
           >
             <div className="flex flex-col gap-1.5">
               {visibleItems.map((item) => {
@@ -166,14 +172,14 @@ export function LeftRail({
                     type="button"
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => handleNavClick(item.id)}
-                    className={`flex items-center justify-between rounded px-3 py-2.5 text-xs font-medium tracking-[0.16em] transition-colors ${
+                    className={`flex min-h-[44px] items-center justify-between rounded-md px-3.5 py-2.5 text-xs font-medium tracking-[0.16em] transition-colors ${
                       isActive
                         ? 'bg-[#0A1A33] text-[#F6F7F9]'
                         : 'text-[#515F73] hover:bg-white hover:text-[#0A1A33]'
                     }`}
                   >
                     <span className="flex items-center gap-3">
-                      <Icon className="h-4 w-4" strokeWidth={1.6} />
+                      <Icon className="h-4 w-4 shrink-0" strokeWidth={1.6} />
                       {item.label}
                     </span>
                     {item.id === 'my-rides' && activeRideCount > 0 && (
@@ -188,6 +194,80 @@ export function LeftRail({
                   </button>
                 );
               })}
+            </div>
+
+            {/* Live Fleet Counters inside Mobile Drawer */}
+            <div className="mt-4 grid grid-cols-2 gap-2.5 border-t border-[#DDE2E8] pt-4">
+              <div className="rounded-md border border-[#DDE2E8] bg-white px-3 py-2.5">
+                <p className="text-[10px] font-medium tracking-[0.12em] text-[#515F73]">STATIONS</p>
+                <p className="tabular-nums mt-0.5 font-display text-lg font-semibold text-[#0A1A33]">
+                  {String(activeStationsCount).padStart(2, '0')}
+                </p>
+              </div>
+              <div className="rounded-md border border-[#DDE2E8] bg-white px-3 py-2.5">
+                <p className="text-[10px] font-medium tracking-[0.12em] text-[#515F73]">FREE</p>
+                <p className="tabular-nums mt-0.5 font-display text-lg font-semibold text-[#0A1A33]">
+                  {freeFleetCount}
+                </p>
+              </div>
+            </div>
+
+            {/* Mobile User Profile / Auth Controls */}
+            <div className="mt-3 border-t border-[#DDE2E8] pt-3">
+              {currentUser ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#DDE2E8] bg-white p-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      {isPrimarySuperAdmin(currentUser) && (
+                        <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[#0A1A33]" />
+                      )}
+                      <p className="truncate text-xs font-semibold text-[#0A1A33]">
+                        {currentUser.name}
+                      </p>
+                    </div>
+                    <p className="truncate text-[11px] text-[#515F73]">{currentUser.email}</p>
+                    <span className="mt-1 inline-block rounded bg-[#F6F7F9] px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+                      {currentUser.role.toUpperCase()}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      onLogout();
+                    }}
+                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[#0A1A33]"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    SIGN OUT
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      onOpenAuth('login');
+                    }}
+                    className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded bg-[#0A1A33] px-3 py-2 text-[11px] font-medium tracking-[0.12em] text-white"
+                  >
+                    <LogIn className="h-3.5 w-3.5" />
+                    SIGN IN
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      onOpenAuth('register');
+                    }}
+                    className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded border border-[#DDE2E8] bg-white px-3 py-2 text-[11px] font-medium tracking-[0.12em] text-[#0A1A33]"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    REGISTER
+                  </button>
+                </div>
+              )}
             </div>
           </nav>
         </>

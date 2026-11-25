@@ -115,6 +115,11 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                 "DEPENDENCY_CONFLICT",
                 "Cannot complete this action because related vehicles or reservations depend on this record."),
 
+            PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected => (
+                StatusCodes.Status409Conflict,
+                "CONCURRENCY_CONFLICT",
+                "This vehicle was just modified or reserved by another request. Please refresh and try again."),
+
             PostgresErrorCodes.NotNullViolation => (
                 StatusCodes.Status400BadRequest,
                 "MISSING_REQUIRED_FIELD",

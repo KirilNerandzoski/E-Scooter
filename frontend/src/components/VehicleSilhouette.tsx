@@ -1,5 +1,7 @@
+import type { VehicleSilhouetteKind } from '../utils/vehicleSilhouette';
+
 interface VehicleSilhouetteProps {
-  kind: 'scooter' | 'ebike' | 'cargo';
+  kind: VehicleSilhouetteKind;
   inverted?: boolean;
   className?: string;
 }
@@ -110,17 +112,4 @@ export function VehicleSilhouette({
       <path d="M31 19L31 14.5" stroke={accent} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
-}
-
-export function resolveVehicleSilhouetteKind(
-  vehicleName: string,
-  typeName: string
-): 'scooter' | 'ebike' | 'cargo' {
-  const lowerName = vehicleName.toLowerCase();
-  const lowerType = typeName.toLowerCase();
-  if (lowerName.includes('cargo')) return 'cargo';
-  if (lowerType.includes('bike') || lowerName.includes('bike') || lowerName.includes('tourer')) {
-    return 'ebike';
-  }
-  return 'scooter';
 }

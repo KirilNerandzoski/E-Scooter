@@ -34,14 +34,18 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
       const height = canvas.clientHeight;
       if (width === 0 || height === 0) return;
 
+      const isCompact = width < 640;
+
       ctx.clearRect(0, 0, width, height);
       ctx.globalCompositeOperation = 'source-over';
 
       pointerX += (targetX - pointerX) * 0.035;
       pointerY += (targetY - pointerY) * 0.035;
 
-      const dropX = width * (0.78 + (pointerX - 0.78) * 0.06);
-      const dropY = height * (0.42 + (pointerY - 0.42) * 0.06);
+      const anchorX = isCompact ? 0.84 : 0.78;
+      const anchorY = isCompact ? 0.24 : 0.42;
+      const dropX = width * (anchorX + (pointerX - 0.78) * 0.05);
+      const dropY = height * (anchorY + (pointerY - 0.42) * 0.05);
 
       let safeBox: { left: number; top: number; right: number; bottom: number } | null = null;
       if (safeZoneRef?.current) {
@@ -55,11 +59,12 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
         };
       }
 
-      const ribbonCount = 26;
+      const ribbonCount = isCompact ? 18 : 26;
+      const alphaScale = isCompact ? 0.78 : 1;
       for (let i = 0; i < ribbonCount; i++) {
         const ratio = i / (ribbonCount - 1);
-        const alpha = 0.045 + Math.sin(ratio * Math.PI) * 0.145;
-        const lineWidth = 0.7 + (i % 5 === 0 ? 1.4 : 0.45);
+        const alpha = (0.045 + Math.sin(ratio * Math.PI) * 0.145) * alphaScale;
+        const lineWidth = 0.7 + (i % 5 === 0 ? 1.3 : 0.45);
 
         ctx.beginPath();
         ctx.strokeStyle =
@@ -70,24 +75,25 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
               : `rgba(96, 109, 128, ${alpha * 0.9})`;
         ctx.lineWidth = lineWidth;
 
-        const baseOffset = (ratio - 0.5) * height * 0.94;
-        const steps = 80;
+        const baseOffset = (ratio - 0.5) * height * 0.92;
+        const steps = isCompact ? 56 : 80;
         for (let s = 0; s <= steps; s++) {
           const u = s / steps;
           const x = u * width;
 
-          const wave1 = Math.sin(u * 4.6 + time * 0.42 + ratio * 5.0) * (20 + ratio * 22);
-          const wave2 = Math.cos(u * 8.0 - time * 0.28 + ratio * 3.1) * 9;
+          const wave1 = Math.sin(u * 4.6 + time * 0.42 + ratio * 5.0) * (16 + ratio * 18);
+          const wave2 = Math.cos(u * 8.0 - time * 0.28 + ratio * 3.1) * 7;
 
-          let y = height * 0.42 + baseOffset + wave1 + wave2 - (u - 0.5) * height * 0.12;
+          let y = height * 0.38 + baseOffset + wave1 + wave2 - (u - 0.5) * height * 0.12;
 
           const dx = x - dropX;
           const dy = y - dropY;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 175) {
-            const influence = Math.pow(1 - dist / 175, 2);
-            const swirl = Math.sin(dist * 0.045 - time * 0.6) * 16 * influence;
-            y += swirl + (dy / (dist + 1)) * 14 * influence;
+          const maxSwirlDist = isCompact ? 120 : 175;
+          if (dist < maxSwirlDist) {
+            const influence = Math.pow(1 - dist / maxSwirlDist, 2);
+            const swirl = Math.sin(dist * 0.045 - time * 0.6) * 14 * influence;
+            y += swirl + (dy / (dist + 1)) * 12 * influence;
           }
 
           if (s === 0) ctx.moveTo(x, y);
@@ -96,8 +102,9 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
         ctx.stroke();
       }
 
+      const ringStep = isCompact ? 11 : 15;
       for (let r = 0; r < 7; r++) {
-        const radius = 12 + r * 15 + Math.sin(time * 0.8 + r) * 1.8;
+        const radius = (isCompact ? 9 : 12) + r * ringStep + Math.sin(time * 0.8 + r) * 1.5;
         ctx.beginPath();
         ctx.ellipse(
           dropX,
@@ -108,27 +115,28 @@ export function SuminagashiCanvas({ className = '', safeZoneRef }: SuminagashiCa
           0,
           Math.PI * 2
         );
-        ctx.strokeStyle = `rgba(10, 26, 51, ${Math.max(0.03, 0.24 - r * 0.03)})`;
-        ctx.lineWidth = r === 0 ? 2 : 0.9;
+        ctx.strokeStyle = `rgba(10, 26, 51, ${Math.max(0.03, (0.24 - r * 0.03) * alphaScale)})`;
+        ctx.lineWidth = r === 0 ? 1.8 : 0.85;
         ctx.stroke();
       }
 
-      const coreGrad = ctx.createRadialGradient(dropX, dropY, 1, dropX, dropY, 16);
-      coreGrad.addColorStop(0, 'rgba(10, 26, 51, 0.78)');
-      coreGrad.addColorStop(0.55, 'rgba(30, 45, 74, 0.28)');
+      const coreRadius = isCompact ? 12 : 16;
+      const coreGrad = ctx.createRadialGradient(dropX, dropY, 1, dropX, dropY, coreRadius);
+      coreGrad.addColorStop(0, `rgba(10, 26, 51, ${0.76 * alphaScale})`);
+      coreGrad.addColorStop(0.55, `rgba(30, 45, 74, ${0.26 * alphaScale})`);
       coreGrad.addColorStop(1, 'rgba(10, 26, 51, 0)');
       ctx.fillStyle = coreGrad;
       ctx.beginPath();
-      ctx.arc(dropX, dropY, 16, 0, Math.PI * 2);
+      ctx.arc(dropX, dropY, coreRadius, 0, Math.PI * 2);
       ctx.fill();
 
       if (safeBox) {
-        const padX = 28;
-        const padY = 18;
+        const padX = isCompact ? 20 : 28;
+        const padY = isCompact ? 16 : 18;
         const cx = (safeBox.left + safeBox.right) / 2;
         const cy = (safeBox.top + safeBox.bottom) / 2;
-        const rx = Math.max(80, (safeBox.right - safeBox.left) / 2 + padX);
-        const ry = Math.max(50, (safeBox.bottom - safeBox.top) / 2 + padY);
+        const rx = Math.max(70, (safeBox.right - safeBox.left) / 2 + padX);
+        const ry = Math.max(46, (safeBox.bottom - safeBox.top) / 2 + padY);
 
         ctx.save();
         ctx.globalCompositeOperation = 'destination-out';

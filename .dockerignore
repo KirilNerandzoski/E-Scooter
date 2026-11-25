@@ -1,0 +1,24 @@
+# Git & CI
+.git
+.gitignore
+.github
+
+# Frontend local artifacts
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Backend local build & test artifacts
+backend/**/bin
+backend/**/obj
+backend/Rydio.Tests
+
+# Design & IDE scratch files
+.impeccable
+.vscode
+.idea
+*.local
+.env
+.env.*
+Thumbs.db
+.DS_Store

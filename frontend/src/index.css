@@ -18,12 +18,18 @@
 }
 
 @layer base {
+  html,
+  body {
+    overflow-x: clip;
+  }
+
   html {
     font-family: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
     background-color: var(--paper-white);
     color: var(--indigo-depth);
     scroll-behavior: smooth;
     caret-color: var(--indigo-depth);
+    -webkit-text-size-adjust: 100%;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -32,8 +38,12 @@
     }
   }
 
-  h1, h2, h3, .font-display {
+  h1,
+  h2,
+  h3,
+  .font-display {
     font-family: "Raleway", "Manrope", sans-serif;
+    font-variant-numeric: lining-nums;
   }
 
   ::selection {
@@ -46,13 +56,101 @@
     outline-offset: 2px;
   }
 
-  a, button {
+  a,
+  button {
     text-underline-offset: 4px;
+    touch-action: manipulation;
+  }
+
+  input[type="date"],
+  input[type="datetime-local"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+/* Unlayered so >=16px beats Tailwind @layer utilities (.text-sm/.text-xs) on phones and prevents iOS Safari auto-zoom */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
   }
 }
 
 .tabular-nums {
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@keyframes rydio-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rydio-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rydio-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rydio-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rydio-backdrop-enter {
+  animation: rydio-backdrop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rydio-modal-enter {
+  animation: rydio-surface-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rydio-drawer-enter {
+  animation: rydio-drawer-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rydio-toast-enter {
+  animation: rydio-toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rydio-backdrop-enter,
+  .rydio-modal-enter,
+  .rydio-drawer-enter,
+  .rydio-toast-enter {
+    animation: none;
+  }
 }
 
 /* Custom subtle paper scrollbar */

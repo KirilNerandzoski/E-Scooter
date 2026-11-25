@@ -4,16 +4,23 @@ import type { Reservation, Station, Vehicle } from '../types/rydio';
 import { calculateLatePenalty, formatMkd, formatShortDateTime } from '../utils/pricing';
 import { Modal } from './Modal';
 
+export interface ReturnSettlementResult {
+  ok: boolean;
+  latePenaltyMkd?: number;
+  totalPriceMkd?: number;
+}
+
 interface ReturnModalProps {
   reservation: Reservation;
   vehicle: Vehicle;
   stations: Station[];
+  canSimulateLateReturn: boolean;
   onConfirmReturn: (payload: {
     reservationId: string;
     returnStationId: string;
-    actualReturnTime: string;
+    actualReturnTime?: string;
     latePenaltyMkd: number;
-  }) => Promise<boolean>;
+  }) => Promise<ReturnSettlementResult>;
   onClose: () => void;
 }
 
@@ -21,6 +28,7 @@ export function ReturnModal({
   reservation,
   vehicle,
   stations,
+  canSimulateLateReturn,
   onConfirmReturn,
   onClose,
 }: ReturnModalProps) {
@@ -34,15 +42,16 @@ export function ReturnModal({
     totalMkd: number;
   } | null>(null);
 
+  const [openedAt] = useState(() => new Date());
+
   const effectiveReturnDate = useMemo(() => {
-    const base = new Date();
-    if (simulateLateHours > 0) {
+    if (canSimulateLateReturn && simulateLateHours > 0) {
       const bookedEnd = new Date(reservation.endTime);
-      const laterOfNowOrEnd = bookedEnd > base ? bookedEnd : base;
+      const laterOfNowOrEnd = bookedEnd > openedAt ? bookedEnd : openedAt;
       return new Date(laterOfNowOrEnd.getTime() + simulateLateHours * 60 * 60 * 1000);
     }
-    return base;
-  }, [reservation.endTime, simulateLateHours]);
+    return openedAt;
+  }, [canSimulateLateReturn, openedAt, reservation.endTime, simulateLateHours]);
 
   const { lateHours, penaltyMkd } = useMemo(
     () => calculateLatePenalty(vehicle, reservation.endTime, effectiveReturnDate),
@@ -57,18 +66,23 @@ export function ReturnModal({
     setSubmitting(true);
     try {
       const stationName = stations.find((s) => s.id === returnStationId)?.name ?? 'Skopje Station';
-      const ok = await onConfirmReturn({
+      const result = await onConfirmReturn({
         reservationId: reservation.id,
         returnStationId,
-        actualReturnTime: effectiveReturnDate.toISOString(),
+        actualReturnTime:
+          canSimulateLateReturn && simulateLateHours > 0
+            ? effectiveReturnDate.toISOString()
+            : undefined,
         latePenaltyMkd: penaltyMkd,
       });
-      if (ok) {
+      if (result.ok) {
+        const settledBase = result.totalPriceMkd ?? reservation.totalPriceMkd;
+        const settledPenalty = result.latePenaltyMkd ?? penaltyMkd;
         setSettledReceipt({
           stationName,
-          baseMkd: reservation.totalPriceMkd,
-          penaltyMkd,
-          totalMkd: finalTotal,
+          baseMkd: settledBase,
+          penaltyMkd: settledPenalty,
+          totalMkd: settledBase + settledPenalty,
         });
       }
     } finally {
@@ -78,9 +92,12 @@ export function ReturnModal({
 
   return (
     <Modal labelledBy="return-modal-title" maxWidthClass="max-w-lg" onClose={onClose}>
-      <div className="flex items-start justify-between rounded-t-lg border-b border-[#DDE2E8] bg-white px-6 py-5">
+      <div className="flex items-start justify-between gap-3 rounded-t-lg border-b border-[#DDE2E8] bg-white px-4 py-4 sm:px-6 sm:py-5">
         <div>
-          <h2 id="return-modal-title" className="font-display text-2xl font-normal text-[#0A1A33]">
+          <h2
+            id="return-modal-title"
+            className="font-display text-xl font-normal text-[#0A1A33] sm:text-2xl"
+          >
             {settledReceipt ? 'Ride Completed' : `Return ${vehicle.name}`}
           </h2>
           <p className="mt-1 text-xs text-[#515F73]">
@@ -91,14 +108,14 @@ export function ReturnModal({
           type="button"
           onClick={onClose}
           aria-label="Close return dialog"
-          className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+          className="shrink-0 rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {settledReceipt ? (
-        <div className="space-y-5 p-6">
+        <div className="space-y-5 p-4 sm:p-6">
           <div className="flex items-start gap-3 rounded-md border border-[#0A1A33]/20 bg-white p-4">
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#0A1A33]" />
             <div>
@@ -129,7 +146,7 @@ export function ReturnModal({
               <span className="text-xs font-medium tracking-[0.14em] text-[#515F73]">
                 SETTLED TOTAL
               </span>
-              <span className="tabular-nums font-display text-2xl font-medium text-[#0A1A33]">
+              <span className="tabular-nums font-display text-xl font-medium text-[#0A1A33] sm:text-2xl">
                 {formatMkd(settledReceipt.totalMkd)}
               </span>
             </div>
@@ -139,14 +156,14 @@ export function ReturnModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A]"
+              className="min-h-[42px] w-full rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A] sm:w-auto"
             >
               DONE
             </button>
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-5 p-6">
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5 p-4 sm:p-6">
           <div>
             <label
               htmlFor="return-station"
@@ -179,17 +196,17 @@ export function ReturnModal({
             </div>
 
             {lateHours > 0 ? (
-              <div className="flex items-center justify-between text-xs text-[#822020]">
+              <div className="flex items-center justify-between gap-2 text-xs text-[#822020]">
                 <span className="inline-flex items-center gap-1.5 font-medium">
-                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                   Late penalty ({lateHours}h × 1.5× tariff)
                 </span>
-                <span className="tabular-nums font-semibold">+{formatMkd(penaltyMkd)}</span>
+                <span className="tabular-nums shrink-0 font-semibold">+{formatMkd(penaltyMkd)}</span>
               </div>
             ) : (
               <div className="flex items-center justify-between text-xs text-[#0A1A33]">
                 <span className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                   Returned within booked window
                 </span>
                 <span className="tabular-nums">0 MKD</span>
@@ -200,51 +217,53 @@ export function ReturnModal({
               <span className="text-xs font-medium tracking-[0.14em] text-[#515F73]">
                 FINAL SETTLEMENT
               </span>
-              <span className="tabular-nums font-display text-2xl font-medium text-[#0A1A33]">
+              <span className="tabular-nums font-display text-xl font-medium text-[#0A1A33] sm:text-2xl">
                 {formatMkd(finalTotal)}
               </span>
             </div>
           </div>
 
-          {/* Discreet demo helper tucked inside <details> */}
-          <details className="text-[11px] text-[#515F73]">
-            <summary className="cursor-pointer font-medium hover:text-[#0A1A33]">
-              Demo simulation: test late return penalty
-            </summary>
-            <div className="mt-2 flex items-center justify-between rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2.5">
-              <span>Simulate overdue return (1.5× hourly tariff)</span>
-              <div className="flex items-center gap-1.5">
-                {[0, 2].map((hrs) => (
-                  <button
-                    key={hrs}
-                    type="button"
-                    aria-pressed={simulateLateHours === hrs}
-                    onClick={() => setSimulateLateHours(hrs)}
-                    className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      simulateLateHours === hrs
-                        ? 'bg-[#0A1A33] text-white'
-                        : 'border border-[#DDE2E8] text-[#515F73] hover:text-[#0A1A33]'
-                    }`}
-                  >
-                    {hrs === 0 ? 'On Time' : '+2h Late'}
-                  </button>
-                ))}
+          {/* Admin / Offline Evaluation simulation helper */}
+          {canSimulateLateReturn && (
+            <details className="text-[11px] text-[#515F73]">
+              <summary className="cursor-pointer py-1 font-medium hover:text-[#0A1A33]">
+                Admin simulation: test late return penalty
+              </summary>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2.5">
+                <span>Simulate overdue return (1.5× hourly tariff)</span>
+                <div className="flex items-center gap-1.5">
+                  {[0, 2].map((hrs) => (
+                    <button
+                      key={hrs}
+                      type="button"
+                      aria-pressed={simulateLateHours === hrs}
+                      onClick={() => setSimulateLateHours(hrs)}
+                      className={`min-h-[32px] rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        simulateLateHours === hrs
+                          ? 'bg-[#0A1A33] text-white'
+                          : 'border border-[#DDE2E8] text-[#515F73] hover:text-[#0A1A33]'
+                      }`}
+                    >
+                      {hrs === 0 ? 'On Time' : '+2h Late'}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </details>
+            </details>
+          )}
 
-          <div className="flex items-center justify-end gap-3">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-[#DDE2E8] bg-white px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+              className="min-h-[44px] rounded border border-[#DDE2E8] bg-white px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
             >
               CANCEL
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-45"
+              className="min-h-[44px] rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-45"
             >
               {submitting ? 'COMPLETING...' : 'COMPLETE RETURN'}
             </button>

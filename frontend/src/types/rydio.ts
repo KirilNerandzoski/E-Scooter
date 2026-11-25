@@ -61,7 +61,9 @@ export interface Vehicle {
 
 export interface Reservation {
   id: string;
-  vehicleId: string;
+  vehicleId: string | null;
+  vehicleName?: string;
+  userId?: string;
   customerName: string;
   customerEmail: string;
   pickupStationId: string;
@@ -91,6 +93,7 @@ export interface PriceBreakdown {
 
 export interface MonthlyRevenuePoint {
   month: string;
+  sortOrder?: number;
   revenueMkd: number;
   rides: number;
 }

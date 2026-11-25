@@ -89,6 +89,7 @@ export interface BootstrapPayload {
     status: ReservationStatus;
   }[];
   users: UserAccount[];
+  registeredUsersCount?: number | null;
   monthlyRevenue: MonthlyRevenuePoint[];
   currentUser: UserAccount | null;
 }
@@ -146,13 +147,13 @@ export async function pickUpReservationInApi(reservationId: string) {
 export async function returnReservationInApi(payload: {
   reservationId: string;
   returnStationId: string;
-  actualReturnTime: string;
+  actualReturnTime?: string;
 }) {
   return apiFetch<Reservation>(`/api/reservations/${payload.reservationId}/return`, {
     method: 'POST',
     body: JSON.stringify({
       returnStationId: payload.returnStationId,
-      actualReturnTime: payload.actualReturnTime,
+      ...(payload.actualReturnTime ? { actualReturnTime: payload.actualReturnTime } : {}),
     }),
   });
 }

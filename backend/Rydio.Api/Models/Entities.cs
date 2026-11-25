@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace Rydio.Api.Models;
 
 public class User
@@ -51,8 +53,11 @@ public class Vehicle
 
 public class Reservation
 {
-    public string Id { get; set; } = $"RES-{Random.Shared.Next(1050, 9999)}";
-    public string VehicleId { get; set; } = string.Empty;
+    public static string CreateNewId() => $"RES-{RandomNumberGenerator.GetHexString(8)}";
+
+    public string Id { get; set; } = CreateNewId();
+    public string? VehicleId { get; set; }
+    public string VehicleName { get; set; } = string.Empty;
     public string? UserId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerEmail { get; set; } = string.Empty;

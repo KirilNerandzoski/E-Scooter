@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Data;
 using Rydio.Api.Security;
+using Rydio.Api.Services;
 
 namespace Rydio.Api.Controllers;
 
@@ -32,20 +33,22 @@ public class CatalogController(RydioDbContext db) : ControllerBase
         var canViewReports = RbacPolicies.HasPermission(effectiveRole, RbacPolicies.PermReportsView);
         var canManageUsers = RbacPolicies.HasPermission(effectiveRole, RbacPolicies.PermUsersManage);
 
-        var stations = await db.Stations.OrderBy(s => s.Code).ToListAsync();
-        var vehicleTypes = await db.VehicleTypes.OrderBy(t => t.Name).ToListAsync();
-        var vehiclesQuery = db.Vehicles.AsQueryable();
+        var stations = await db.Stations.AsNoTracking().OrderBy(s => s.Code).ToListAsync();
+        var vehicleTypes = await db.VehicleTypes.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+        var vehiclesQuery = db.Vehicles.AsNoTracking().AsQueryable();
         if (!canManageFleet) vehiclesQuery = vehiclesQuery.Where(v => !v.InMaintenance);
         var vehicles = await vehiclesQuery.OrderBy(v => v.Code).ToListAsync();
 
         var busyWindows = await db.Reservations
-            .Where(r => r.Status == "Reserved" || r.Status == "Active")
-            .Select(r => new { r.VehicleId, r.StartTime, r.EndTime, r.Status })
+            .AsNoTracking()
+            .Where(r => r.VehicleId != null && (r.Status == "Reserved" || r.Status == "Active"))
+            .Select(r => new { VehicleId = r.VehicleId!, r.StartTime, r.EndTime, r.Status })
             .ToListAsync();
 
         object? currentUser = null;
         var reservations = new List<Models.Reservation>();
         var users = new List<object>();
+        int? registeredUsersCount = null;
         var monthlyRevenue = new List<Models.MonthlyRevenueRecord>();
 
         if (liveUser is not null && effectiveRole is not null)
@@ -61,19 +64,19 @@ public class CatalogController(RydioDbContext db) : ControllerBase
                 liveUser.CreatedAt
             };
 
-            reservations = canManageReservations
-                ? await db.Reservations.OrderByDescending(r => r.CreatedAt).ToListAsync()
+            var rawReservations = canManageReservations
+                ? await db.Reservations.AsNoTracking().ToListAsync()
                 : await db.Reservations
+                    .AsNoTracking()
                     .Where(r => r.UserId == liveUser.Id || r.CustomerEmail.ToLower() == liveUser.Email.ToLower())
-                    .OrderByDescending(r => r.CreatedAt)
                     .ToListAsync();
+            reservations = rawReservations.OrderByDescending(r => r.CreatedAt).ToList();
 
             if (canManageUsers)
             {
-                var allUsers = await db.Users
-                    .AsNoTracking()
+                var allUsers = (await db.Users.AsNoTracking().ToListAsync())
                     .OrderByDescending(x => x.CreatedAt)
-                    .ToListAsync();
+                    .ToList();
 
                 users = allUsers
                     .Select(x =>
@@ -95,38 +98,9 @@ public class CatalogController(RydioDbContext db) : ControllerBase
 
             if (canViewReports)
             {
+                registeredUsersCount = canManageUsers ? users.Count : await db.Users.CountAsync();
                 var baseMonths = await db.MonthlyRevenue.OrderBy(m => m.SortOrder).ToListAsync();
-                var monthMap = baseMonths.ToDictionary(
-                    m => m.Month,
-                    m => new Models.MonthlyRevenueRecord
-                    {
-                        Month = m.Month,
-                        SortOrder = m.SortOrder,
-                        RevenueMkd = m.RevenueMkd,
-                        Rides = m.Rides,
-                    },
-                    StringComparer.OrdinalIgnoreCase);
-
-                var nextOrder = baseMonths.Count + 1;
-                foreach (var r in reservations.Where(x => x.Status != "Cancelled"))
-                {
-                    var label = r.StartTime.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture);
-                    if (!monthMap.TryGetValue(label, out var bucket))
-                    {
-                        bucket = new Models.MonthlyRevenueRecord
-                        {
-                            Month = label,
-                            SortOrder = nextOrder++,
-                            RevenueMkd = 0,
-                            Rides = 0,
-                        };
-                        monthMap[label] = bucket;
-                    }
-                    bucket.RevenueMkd += r.TotalPriceMkd + r.LatePenaltyMkd;
-                    bucket.Rides += 1;
-                }
-
-                monthlyRevenue = monthMap.Values.OrderBy(m => m.SortOrder).ToList();
+                monthlyRevenue = PricingService.BuildMonthlyRevenue(baseMonths, reservations);
             }
         }
 
@@ -138,6 +112,7 @@ public class CatalogController(RydioDbContext db) : ControllerBase
             reservations,
             busyWindows,
             users,
+            registeredUsersCount,
             monthlyRevenue,
             currentUser
         });
@@ -162,13 +137,28 @@ public class CatalogController(RydioDbContext db) : ControllerBase
             var s = start.Value.ToUniversalTime();
             var e = end.Value.ToUniversalTime();
             var now = DateTimeOffset.UtcNow;
-            var busyIds = await db.Reservations
+            var activeGraceEnd = now.AddHours(1);
+
+            var candidates = await db.Reservations
+                .AsNoTracking()
+                .Where(r => r.VehicleId != null && (r.Status == "Reserved" || r.Status == "Active"))
+                .Select(r => new { VehicleId = r.VehicleId!, r.Status, r.StartTime, r.EndTime })
+                .ToListAsync();
+
+            var busyIds = candidates
                 .Where(r =>
-                    (r.Status == "Reserved" && r.StartTime < e && s < r.EndTime) ||
-                    (r.Status == "Active" && (r.StartTime < e || now < e) && (s < r.EndTime || s < now)))
+                {
+                    if (r.Status == "Active")
+                    {
+                        var effStart = r.StartTime < now ? r.StartTime : now;
+                        var effEnd = r.EndTime > activeGraceEnd ? r.EndTime : activeGraceEnd;
+                        return s < effEnd && effStart < e;
+                    }
+                    return s < r.EndTime && r.StartTime < e;
+                })
                 .Select(r => r.VehicleId)
                 .Distinct()
-                .ToListAsync();
+                .ToList();
 
             query = query.Where(v => !busyIds.Contains(v.Id));
         }

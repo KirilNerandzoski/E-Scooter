@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { LeftRail, type NavTab } from './components/LeftRail';
 import { RightTelemetry } from './components/RightTelemetry';
 import { ReservationModal } from './components/ReservationModal';
-import { ReturnModal } from './components/ReturnModal';
+import { ReturnModal, type ReturnSettlementResult } from './components/ReturnModal';
 import { AuthModal } from './components/AuthModal';
 import { HomePage } from './pages/HomePage';
 import { CatalogPage } from './pages/CatalogPage';
 import { StationsPage } from './pages/StationsPage';
 import { MyRidesPage } from './pages/MyRidesPage';
-import { AdminPage } from './pages/AdminPage';
 import {
   HISTORICAL_MONTHLY_REVENUE,
   INITIAL_RESERVATIONS,
@@ -37,7 +36,12 @@ import {
   sanitizeUsersRbac,
 } from './utils/rbac';
 import {
+  buildMonthlyRevenue,
+  calculateLatePenalty,
+  canCancelReservation,
+  createClientReservationId,
   formatWindowDuration,
+  getPickupEligibility,
   isVehicleAvailable,
   toLocalDateTimeInput,
   toSafeIso,
@@ -67,6 +71,8 @@ import {
   updateVehicleTypeInApi,
 } from './services/rydioApi';
 
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+
 function loadState<T>(key: string, fallback: T): T {
   try {
     const raw = window.localStorage.getItem(key);
@@ -92,7 +98,32 @@ export function App() {
     isApiConfigured ? 'connecting' : 'offline'
   );
 
+  // Tracks when station filter was applied transiently via Stations -> "Browse Station Fleet"
+  const stationDrilldownRef = useRef(false);
+
+  const [filterTypeId, setFilterTypeId] = useState('');
+  const [filterStationId, setFilterStationId] = useState('');
+  const [filterStart, setFilterStart] = useState(() => {
+    const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    d.setMinutes(0, 0, 0);
+    return toLocalDateTimeInput(d);
+  });
+  const [filterEnd, setFilterEnd] = useState(() => {
+    const d = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    d.setMinutes(0, 0, 0);
+    return toLocalDateTimeInput(d);
+  });
+
+  const handleManualStationChange = useCallback((stationId: string) => {
+    stationDrilldownRef.current = false;
+    setFilterStationId(stationId);
+  }, []);
+
   const setActiveTab = useCallback((next: NavTab) => {
+    if (next !== 'catalog' && stationDrilldownRef.current) {
+      stationDrilldownRef.current = false;
+      setFilterStationId('');
+    }
     setActiveTabState(next);
     if (typeof window !== 'undefined') {
       const targetHash = `#${next}`;
@@ -105,19 +136,27 @@ export function App() {
 
   useEffect(() => {
     const onHashChange = () => {
-      setActiveTabState(readTabFromHash());
+      const next = readTabFromHash();
+      if (next !== 'catalog' && stationDrilldownRef.current) {
+        stationDrilldownRef.current = false;
+        setFilterStationId('');
+      }
+      setActiveTabState(next);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const [users, setUsers] = useState<UserAccount[]>(() =>
+  const [localUsers, setLocalUsers] = useState<UserAccount[]>(() =>
     sanitizeUsersRbac(loadState('rydio_users_v1', INITIAL_USERS))
   );
+  const [apiUsers, setApiUsers] = useState<UserAccount[]>([]);
+  const [apiRegisteredUsersCount, setApiRegisteredUsersCount] = useState<number | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(() =>
     loadState<string | null>('rydio_session_uid_v1', null)
   );
   const [apiCurrentUser, setApiCurrentUser] = useState<UserAccount | null>(null);
+  const [bootNowMs] = useState(() => Date.now());
 
   const [stations, setStations] = useState<Station[]>(() =>
     loadState('rydio_stations_v1', INITIAL_STATIONS)
@@ -134,25 +173,11 @@ export function App() {
   const [busyWindows, setBusyWindows] = useState<
     { vehicleId: string; startTime: string; endTime: string; status: ReservationStatus }[]
   >([]);
-  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenuePoint[]>(
+  const [apiMonthlyRevenue, setApiMonthlyRevenue] = useState<MonthlyRevenuePoint[]>(
     HISTORICAL_MONTHLY_REVENUE
   );
 
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | null>(null);
-
-  const [filterTypeId, setFilterTypeId] = useState('');
-  const [filterStationId, setFilterStationId] = useState('');
-  const [filterStart, setFilterStart] = useState(() => {
-    const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    d.setMinutes(0, 0, 0);
-    return toLocalDateTimeInput(d);
-  });
-  const [filterEnd, setFilterEnd] = useState(() => {
-    const d = new Date(Date.now() + 6 * 60 * 60 * 1000);
-    d.setMinutes(0, 0, 0);
-    return toLocalDateTimeInput(d);
-  });
-
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
   const pendingBookingVehicleRef = useRef<Vehicle | null>(null);
   const [returningReservation, setReturningReservation] = useState<Reservation | null>(null);
@@ -162,14 +187,18 @@ export function App() {
   const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast({ message, tone });
-    toastTimerRef.current = window.setTimeout(() => {
-      setToast(null);
-      toastTimerRef.current = null;
-    }, tone === 'error' ? 4800 : 3600);
+    toastTimerRef.current = window.setTimeout(
+      () => {
+        setToast(null);
+        toastTimerRef.current = null;
+      },
+      tone === 'error' ? 4800 : 3600
+    );
   }, []);
 
   const syncFromApi = useCallback(async () => {
     if (!isApiConfigured) {
+      await Promise.resolve();
       setSyncStatus('offline');
       return;
     }
@@ -192,8 +221,11 @@ export function App() {
             }
           : null
       );
-      if (data.users.length > 0) setUsers(sanitizeUsersRbac(data.users));
-      if (data.monthlyRevenue.length > 0) setMonthlyRevenue(data.monthlyRevenue);
+      setApiUsers(sanitizeUsersRbac(data.users));
+      setApiRegisteredUsersCount(data.registeredUsersCount ?? data.users.length);
+      setApiMonthlyRevenue(
+        data.monthlyRevenue.length > 0 ? data.monthlyRevenue : HISTORICAL_MONTHLY_REVENUE
+      );
       setApiLive(true);
       setSyncStatus('live');
     } catch {
@@ -203,23 +235,75 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void syncFromApi();
-  }, [syncFromApi]);
+    if (!isApiConfigured) return;
+    let active = true;
+    void fetchBootstrapData()
+      .then((data) => {
+        if (!active) return;
+        if (!data) {
+          setSyncStatus('offline');
+          return;
+        }
+        setStations(data.stations);
+        setVehicleTypes(data.vehicleTypes);
+        setVehicles(data.vehicles);
+        setReservations(data.reservations);
+        setBusyWindows(data.busyWindows);
+        setApiCurrentUser(
+          data.currentUser
+            ? {
+                ...data.currentUser,
+                role: normalizeUserRole(data.currentUser.email, data.currentUser.role),
+              }
+            : null
+        );
+        setApiUsers(sanitizeUsersRbac(data.users));
+        setApiRegisteredUsersCount(data.registeredUsersCount ?? data.users.length);
+        setApiMonthlyRevenue(
+          data.monthlyRevenue.length > 0 ? data.monthlyRevenue : HISTORICAL_MONTHLY_REVENUE
+        );
+        setApiLive(true);
+        setSyncStatus('live');
+      })
+      .catch(() => {
+        if (!active) return;
+        setApiLive(false);
+        setSyncStatus('offline');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const users = useMemo(
+    () => (apiLive ? apiUsers : localUsers),
+    [apiLive, apiUsers, localUsers]
+  );
+
+  const registeredUsersCount = useMemo(
+    () => (apiLive ? (apiRegisteredUsersCount ?? apiUsers.length) : localUsers.length),
+    [apiLive, apiRegisteredUsersCount, apiUsers.length, localUsers.length]
+  );
 
   const currentUser = useMemo(() => {
     if (apiLive) return apiCurrentUser;
-    return users.find((u) => u.id === currentUserId && u.active) ?? null;
-  }, [apiLive, apiCurrentUser, users, currentUserId]);
+    return localUsers.find((u) => u.id === currentUserId && u.active) ?? null;
+  }, [apiLive, apiCurrentUser, localUsers, currentUserId]);
+
+  const monthlyRevenue = useMemo<MonthlyRevenuePoint[]>(() => {
+    if (apiLive) return apiMonthlyRevenue;
+    return buildMonthlyRevenue(HISTORICAL_MONTHLY_REVENUE, reservations);
+  }, [apiLive, apiMonthlyRevenue, reservations]);
 
   useEffect(() => {
     if (apiLive) return;
-    window.localStorage.setItem('rydio_users_v1', JSON.stringify(users));
+    window.localStorage.setItem('rydio_users_v1', JSON.stringify(localUsers));
     window.localStorage.setItem('rydio_session_uid_v1', JSON.stringify(currentUserId));
     window.localStorage.setItem('rydio_stations_v1', JSON.stringify(stations));
     window.localStorage.setItem('rydio_types_v1', JSON.stringify(vehicleTypes));
     window.localStorage.setItem('rydio_vehicles_v1', JSON.stringify(vehicles));
     window.localStorage.setItem('rydio_reservations_v1', JSON.stringify(reservations));
-  }, [apiLive, users, currentUserId, stations, vehicleTypes, vehicles, reservations]);
+  }, [apiLive, localUsers, currentUserId, stations, vehicleTypes, vehicles, reservations]);
 
   useEffect(() => {
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
@@ -291,7 +375,7 @@ export function App() {
   };
 
   const handleLocalRegisterSuccess = (newUser: UserAccount) => {
-    setUsers((prev) => [...prev, newUser]);
+    setLocalUsers((prev) => [...prev, newUser]);
     setCurrentUserId(newUser.id);
     setAuthModalMode(null);
     restorePendingBooking();
@@ -302,6 +386,8 @@ export function App() {
     if (apiLive) {
       logoutFromApi();
       setApiCurrentUser(null);
+      setApiUsers([]);
+      setApiRegisteredUsersCount(null);
       await syncFromApi();
     } else {
       setCurrentUserId(null);
@@ -318,15 +404,16 @@ export function App() {
       endIso !== null &&
       new Date(endIso).getTime() > new Date(startIso).getTime();
 
-    const checkStart = hasValidWindow ? startIso : new Date().toISOString();
+    const fallbackDate = new Date(bootNowMs);
+    const checkStart = hasValidWindow ? startIso : fallbackDate.toISOString();
     const checkEnd = hasValidWindow
       ? endIso
-      : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      : new Date(bootNowMs + 60 * 60 * 1000).toISOString();
 
     return vehicles.filter((v) =>
-      isVehicleAvailable(v, availabilityReservations, checkStart, checkEnd)
+      isVehicleAvailable(v, availabilityReservations, checkStart, checkEnd, fallbackDate)
     ).length;
-  }, [vehicles, availabilityReservations, filterStart, filterEnd]);
+  }, [vehicles, availabilityReservations, filterStart, filterEnd, bootNowMs]);
 
   const windowFreeCount = useMemo(() => {
     const startIso = toSafeIso(filterStart);
@@ -365,7 +452,8 @@ export function App() {
     if (!currentUser) return 0;
     return reservations.filter(
       (r) =>
-        r.customerEmail.toLowerCase() === currentUser.email.toLowerCase() &&
+        ((r.userId && r.userId === currentUser.id) ||
+          r.customerEmail.toLowerCase() === currentUser.email.toLowerCase()) &&
         (r.status === 'Active' || r.status === 'Reserved')
     ).length;
   }, [reservations, currentUser]);
@@ -405,9 +493,15 @@ export function App() {
       }
     }
 
+    if (!isVehicleAvailable(vehicle, reservations, payload.startTime, payload.endTime)) {
+      showToast('This vehicle already has an overlapping reservation in that window.', 'error');
+      return false;
+    }
+
     const newRes: Reservation = {
-      id: `RES-${Math.floor(1050 + Math.random() * 8900)}`,
+      id: createClientReservationId(),
       vehicleId: vehicle.id,
+      vehicleName: vehicle.name,
       customerName: currentUser.name,
       customerEmail: currentUser.email,
       pickupStationId: vehicle.stationId,
@@ -430,7 +524,7 @@ export function App() {
     return true;
   };
 
-  const handlePickUp = async (reservationId: string) => {
+  const handlePickUp = async (reservationId: string): Promise<void> => {
     if (apiLive) {
       try {
         await pickUpReservationInApi(reservationId);
@@ -441,6 +535,16 @@ export function App() {
       }
       return;
     }
+
+    const target = reservations.find((r) => r.id === reservationId);
+    if (!target) return;
+    const isAdminOverride = hasPermission(currentUser, 'reservations:manage');
+    const eligibility = getPickupEligibility(target, isAdminOverride, new Date(), reservations);
+    if (!eligibility.canPickUp) {
+      showToast(eligibility.reason ?? 'Pickup is not open yet.', 'error');
+      return;
+    }
+
     setReservations((prev) =>
       prev.map((r) => (r.id === reservationId ? { ...r, status: 'Active' } : r))
     );
@@ -450,29 +554,34 @@ export function App() {
   const handleConfirmReturn = async (payload: {
     reservationId: string;
     returnStationId: string;
-    actualReturnTime: string;
+    actualReturnTime?: string;
     latePenaltyMkd: number;
-  }): Promise<boolean> => {
+  }): Promise<ReturnSettlementResult> => {
     const stationName = stations.find((s) => s.id === payload.returnStationId)?.name ?? 'station';
     if (apiLive) {
       try {
-        await returnReservationInApi({
+        const settled = await returnReservationInApi({
           reservationId: payload.reservationId,
           returnStationId: payload.returnStationId,
           actualReturnTime: payload.actualReturnTime,
         });
         await syncFromApi();
         showToast(`Vehicle docked at ${stationName}.`);
-        return true;
+        return {
+          ok: true,
+          latePenaltyMkd: settled.latePenaltyMkd,
+          totalPriceMkd: settled.totalPriceMkd,
+        };
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Return failed.', 'error');
-        return false;
+        return { ok: false };
       }
     }
 
     const target = reservations.find((r) => r.id === payload.reservationId);
-    if (!target) return false;
+    if (!target) return { ok: false };
 
+    const effectiveIso = payload.actualReturnTime ?? new Date().toISOString();
     setReservations((prev) =>
       prev.map((r) =>
         r.id === payload.reservationId
@@ -480,22 +589,28 @@ export function App() {
               ...r,
               status: 'Completed',
               returnStationId: payload.returnStationId,
-              actualReturnTime: payload.actualReturnTime,
+              actualReturnTime: effectiveIso,
               latePenaltyMkd: payload.latePenaltyMkd,
             }
           : r
       )
     );
-    setVehicles((prev) =>
-      prev.map((v) =>
-        v.id === target.vehicleId ? { ...v, stationId: payload.returnStationId } : v
-      )
-    );
+    if (target.vehicleId) {
+      setVehicles((prev) =>
+        prev.map((v) =>
+          v.id === target.vehicleId ? { ...v, stationId: payload.returnStationId } : v
+        )
+      );
+    }
     showToast(`Vehicle docked at ${stationName}.`);
-    return true;
+    return {
+      ok: true,
+      latePenaltyMkd: payload.latePenaltyMkd,
+      totalPriceMkd: target.totalPriceMkd,
+    };
   };
 
-  const handleCancelReservation = async (reservationId: string) => {
+  const handleCancelReservation = async (reservationId: string): Promise<void> => {
     if (apiLive) {
       try {
         await cancelReservationInApi(reservationId);
@@ -506,6 +621,15 @@ export function App() {
       }
       return;
     }
+
+    const target = reservations.find((r) => r.id === reservationId);
+    if (!target) return;
+    const isAdminOverride = hasPermission(currentUser, 'reservations:manage');
+    if (!isAdminOverride && !canCancelReservation(target)) {
+      showToast('Cancellation is only allowed up to 1 hour before start time.', 'error');
+      return;
+    }
+
     setReservations((prev) =>
       prev.map((r) => (r.id === reservationId ? { ...r, status: 'Cancelled' } : r))
     );
@@ -528,7 +652,7 @@ export function App() {
   );
 
   // Admin & SuperAdmin handlers
-  const handleToggleMaintenance = async (vehicleId: string) => {
+  const handleToggleMaintenance = async (vehicleId: string): Promise<void> => {
     if (!requirePermission('fleet:manage')) return;
     const target = vehicles.find((v) => v.id === vehicleId);
     if (!target) return;
@@ -622,7 +746,7 @@ export function App() {
     return true;
   };
 
-  const handleDeleteVehicle = async (vehicleId: string) => {
+  const handleDeleteVehicle = async (vehicleId: string): Promise<void> => {
     if (!requirePermission('fleet:manage')) return;
     const target = vehicles.find((v) => v.id === vehicleId);
     if (apiLive) {
@@ -645,6 +769,19 @@ export function App() {
       );
       return;
     }
+
+    // Preserve historical Completed & Cancelled reservations and their display name
+    setReservations((prev) =>
+      prev.map((r) =>
+        r.vehicleId === vehicleId
+          ? {
+              ...r,
+              vehicleName: r.vehicleName || target?.name || 'Retired Vehicle',
+              vehicleId: null,
+            }
+          : r
+      )
+    );
     setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
     showToast(`Removed ${target?.name ?? 'vehicle'} from fleet.`);
   };
@@ -704,7 +841,7 @@ export function App() {
     return true;
   };
 
-  const handleDeleteType = async (typeId: string) => {
+  const handleDeleteType = async (typeId: string): Promise<void> => {
     if (!requirePermission('types:manage')) return;
     const inUse = vehicles.some((v) => v.typeId === typeId);
     if (inUse) {
@@ -790,7 +927,7 @@ export function App() {
     return true;
   };
 
-  const handleDeleteStation = async (stationId: string) => {
+  const handleDeleteStation = async (stationId: string): Promise<void> => {
     if (!requirePermission('stations:manage')) return;
     const hasDocked = vehicles.some((v) => v.stationId === stationId);
     if (hasDocked) {
@@ -814,7 +951,7 @@ export function App() {
   const handleAdminSetReservationStatus = async (
     reservationId: string,
     status: ReservationStatus
-  ) => {
+  ): Promise<void> => {
     if (!requirePermission('reservations:manage')) return;
     if (apiLive) {
       try {
@@ -826,13 +963,31 @@ export function App() {
       }
       return;
     }
+    const completedAt = new Date();
     setReservations((prev) =>
-      prev.map((r) => (r.id === reservationId ? { ...r, status } : r))
+      prev.map((r) => {
+        if (r.id !== reservationId) return r;
+        if (status === 'Completed' && !r.actualReturnTime) {
+          const veh = r.vehicleId ? vehicles.find((v) => v.id === r.vehicleId) : undefined;
+          const autoPenalty =
+            r.latePenaltyMkd === 0 && veh
+              ? calculateLatePenalty(veh, r.endTime, completedAt).penaltyMkd
+              : r.latePenaltyMkd;
+          return {
+            ...r,
+            status,
+            actualReturnTime: completedAt.toISOString(),
+            returnStationId: r.returnStationId ?? r.pickupStationId,
+            latePenaltyMkd: autoPenalty,
+          };
+        }
+        return { ...r, status };
+      })
     );
     showToast(`Reservation ${reservationId} marked ${status}.`);
   };
 
-  const handleDeleteReservation = async (reservationId: string) => {
+  const handleDeleteReservation = async (reservationId: string): Promise<void> => {
     if (!requirePermission('reservations:delete')) return;
     if (apiLive) {
       try {
@@ -881,12 +1036,12 @@ export function App() {
       id: `usr-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
-    setUsers((prev) => [...prev, created]);
+    setLocalUsers((prev) => [...prev, created]);
     showToast(`Created ${created.role} account for ${created.name}.`);
     return true;
   };
 
-  const handleUpdateUserRole = async (userId: string, nextRole: AccountRole) => {
+  const handleUpdateUserRole = async (userId: string, nextRole: AccountRole): Promise<void> => {
     if (!requirePermission('roles:assign')) return;
     const target = users.find((u) => u.id === userId);
     if (target && isPrimarySuperAdminEmail(target.email)) {
@@ -907,11 +1062,11 @@ export function App() {
       }
       return;
     }
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: nextRole } : u)));
+    setLocalUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: nextRole } : u)));
     showToast(`Updated user role to ${nextRole}.`);
   };
 
-  const handleToggleUserActive = async (userId: string) => {
+  const handleToggleUserActive = async (userId: string): Promise<void> => {
     if (!requirePermission('users:manage')) return;
     const target = users.find((u) => u.id === userId);
     if (!target) return;
@@ -929,11 +1084,11 @@ export function App() {
       }
       return;
     }
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, active: !u.active } : u)));
+    setLocalUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, active: !u.active } : u)));
     showToast(target.active ? `Suspended ${target.name}.` : `Reactivated ${target.name}.`);
   };
 
-  const handleDeleteUser = async (userId: string) => {
+  const handleDeleteUser = async (userId: string): Promise<void> => {
     if (!requirePermission('users:manage')) return;
     const target = users.find((u) => u.id === userId);
     if (target && isPrimarySuperAdminEmail(target.email)) {
@@ -950,14 +1105,14 @@ export function App() {
       }
       return;
     }
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setLocalUsers((prev) => prev.filter((u) => u.id !== userId));
     showToast('User account deleted.');
   };
 
-  const handleResetSystemData = () => {
+  const handleResetSystemData = async () => {
     if (!requirePermission('fleet:manage')) return;
     if (apiLive) {
-      void syncFromApi();
+      await syncFromApi();
       showToast('Synced latest state from .NET 10 PostgreSQL API.');
       return;
     }
@@ -965,15 +1120,17 @@ export function App() {
     setVehicleTypes(INITIAL_VEHICLE_TYPES);
     setVehicles(INITIAL_VEHICLES);
     setReservations(INITIAL_RESERVATIONS);
-    setUsers(sanitizeUsersRbac(INITIAL_USERS));
+    setLocalUsers(sanitizeUsersRbac(INITIAL_USERS));
     showToast('System demo data restored to defaults.');
   };
 
-  const returningVehicle = returningReservation
-    ? vehicles.find((v) => v.id === returningReservation.vehicleId)
-    : undefined;
+  const returningVehicle =
+    returningReservation && returningReservation.vehicleId
+      ? vehicles.find((v) => v.id === returningReservation.vehicleId)
+      : undefined;
 
   const isPrivileged = canAccessAdminPanel(currentUser);
+  const canSimulateLateReturn = !apiLive || hasPermission(currentUser, 'reservations:manage');
   const showTelemetry = activeTab !== 'admin' && activeTab !== 'my-rides';
 
   return (
@@ -990,16 +1147,26 @@ export function App() {
       />
 
       {syncStatus === 'connecting' && (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`fixed top-3 z-40 flex items-center gap-2 rounded-full border border-[#DDE4EE] bg-white/95 px-3 py-1.5 text-[11px] font-medium text-[#5A6A82] shadow-sm backdrop-blur ${
-            showTelemetry ? 'right-4 xl:right-[144px]' : 'right-4'
-          }`}
-        >
-          <Loader2 className="h-3 w-3 animate-spin text-[#0A1A33]" />
-          Connecting to Rydio server…
-        </div>
+        <>
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center justify-center gap-2 border-b border-[#DDE2E8] bg-white/95 px-4 py-1.5 text-[11px] font-medium text-[#515F73] lg:hidden"
+          >
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[#0A1A33]" />
+            <span>Connecting to Rydio server…</span>
+          </div>
+          <div
+            role="status"
+            aria-live="polite"
+            className={`fixed top-3 z-20 hidden items-center gap-2 rounded-full border border-[#DDE4EE] bg-white/95 px-3 py-1.5 text-[11px] font-medium text-[#5A6A82] shadow-sm backdrop-blur lg:flex ${
+              showTelemetry ? 'right-4 xl:right-[144px]' : 'right-4'
+            }`}
+          >
+            <Loader2 className="h-3 w-3 animate-spin text-[#0A1A33]" />
+            Connecting to Rydio server…
+          </div>
+        </>
       )}
 
       <main className={showTelemetry ? 'lg:pl-[196px] xl:pr-[128px]' : 'lg:pl-[196px]'}>
@@ -1014,7 +1181,7 @@ export function App() {
             filterStart={filterStart}
             filterEnd={filterEnd}
             onChangeType={setFilterTypeId}
-            onChangeStation={setFilterStationId}
+            onChangeStation={handleManualStationChange}
             onChangeStart={setFilterStart}
             onChangeEnd={setFilterEnd}
             onFindRides={() => setActiveTab('catalog')}
@@ -1034,7 +1201,7 @@ export function App() {
             filterStart={filterStart}
             filterEnd={filterEnd}
             onChangeType={setFilterTypeId}
-            onChangeStation={setFilterStationId}
+            onChangeStation={handleManualStationChange}
             onChangeStart={setFilterStart}
             onChangeEnd={setFilterEnd}
             onSelectVehicle={(v) => setBookingVehicle(v)}
@@ -1049,6 +1216,7 @@ export function App() {
             filterStart={filterStart}
             filterEnd={filterEnd}
             onBrowseStation={(stationId) => {
+              stationDrilldownRef.current = true;
               setFilterStationId(stationId);
               setActiveTab('catalog');
             }}
@@ -1063,45 +1231,55 @@ export function App() {
             stations={stations}
             onOpenAuth={(mode) => setAuthModalMode(mode)}
             onBrowseCatalog={() => setActiveTab('catalog')}
-            onPickUp={(id) => void handlePickUp(id)}
+            onPickUp={handlePickUp}
             onOpenReturn={(res) => setReturningReservation(res)}
-            onCancel={(id) => void handleCancelReservation(id)}
+            onCancel={handleCancelReservation}
           />
         )}
 
         {activeTab === 'admin' && isPrivileged && currentUser && (
-          <AdminPage
-            currentUser={currentUser}
-            apiLive={apiLive}
-            users={users}
-            vehicles={vehicles}
-            vehicleTypes={vehicleTypes}
-            stations={stations}
-            reservations={reservations}
-            monthlyRevenue={monthlyRevenue}
-            onShowError={(msg) => showToast(msg, 'error')}
-            onToggleMaintenance={(id) => void handleToggleMaintenance(id)}
-            onAddVehicle={handleAddVehicle}
-            onUpdateVehicle={handleUpdateVehicle}
-            onDeleteVehicle={(id) => void handleDeleteVehicle(id)}
-            onAddType={handleAddType}
-            onUpdateType={handleUpdateType}
-            onDeleteType={(id) => void handleDeleteType(id)}
-            onAddStation={handleAddStation}
-            onUpdateStation={handleUpdateStation}
-            onDeleteStation={(id) => void handleDeleteStation(id)}
-            onAdminSetReservationStatus={(id, st) => void handleAdminSetReservationStatus(id, st)}
-            onDeleteReservation={(id) => void handleDeleteReservation(id)}
-            onCreateUser={handleCreateUser}
-            onUpdateUserRole={(id, r) => void handleUpdateUserRole(id, r)}
-            onToggleUserActive={(id) => void handleToggleUserActive(id)}
-            onDeleteUser={(id) => void handleDeleteUser(id)}
-            onResetSystemData={handleResetSystemData}
-          />
+          <Suspense
+            fallback={
+              <div className="flex min-h-[50vh] items-center justify-center px-6 py-20 text-xs font-medium tracking-[0.14em] text-[#515F73]">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin text-[#0A1A33]" />
+                LOADING OPERATIONS CONSOLE…
+              </div>
+            }
+          >
+            <AdminPage
+              currentUser={currentUser}
+              apiLive={apiLive}
+              users={users}
+              registeredUsersCount={registeredUsersCount}
+              vehicles={vehicles}
+              vehicleTypes={vehicleTypes}
+              stations={stations}
+              reservations={reservations}
+              monthlyRevenue={monthlyRevenue}
+              onShowError={(msg) => showToast(msg, 'error')}
+              onToggleMaintenance={handleToggleMaintenance}
+              onAddVehicle={handleAddVehicle}
+              onUpdateVehicle={handleUpdateVehicle}
+              onDeleteVehicle={handleDeleteVehicle}
+              onAddType={handleAddType}
+              onUpdateType={handleUpdateType}
+              onDeleteType={handleDeleteType}
+              onAddStation={handleAddStation}
+              onUpdateStation={handleUpdateStation}
+              onDeleteStation={handleDeleteStation}
+              onAdminSetReservationStatus={handleAdminSetReservationStatus}
+              onDeleteReservation={handleDeleteReservation}
+              onCreateUser={handleCreateUser}
+              onUpdateUserRole={handleUpdateUserRole}
+              onToggleUserActive={handleToggleUserActive}
+              onDeleteUser={handleDeleteUser}
+              onResetSystemData={handleResetSystemData}
+            />
+          </Suspense>
         )}
 
         {activeTab === 'admin' && (!isPrivileged || !currentUser) && (
-          <div className="mx-auto max-w-[680px] px-6 py-24 text-center">
+          <div className="mx-auto max-w-[680px] px-4 py-16 text-center sm:px-6 sm:py-24">
             <h1 className="font-display text-2xl font-light text-[#0A1A33]">
               Restricted by Role-Based Access Control
             </h1>
@@ -1110,12 +1288,12 @@ export function App() {
                 ? `Your account (${currentUser.email}) has the ${currentUser.role} role, which can browse the catalog and manage personal rides only. Website and fleet modifications are restricted.`
                 : 'Sign in with the SuperAdmin account to manage fleet vehicles, stations, reservations, and user roles.'}
             </p>
-            <div className="mt-6 flex items-center justify-center gap-3">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               {!currentUser && (
                 <button
                   type="button"
                   onClick={() => setAuthModalMode('login')}
-                  className="rounded-md bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-[#13294B]"
+                  className="min-h-[42px] rounded-md bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-[#13294B]"
                 >
                   SIGN IN
                 </button>
@@ -1123,7 +1301,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('home')}
-                className="rounded-md border border-[#DDE4EE] bg-white px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-[#0A1A33] transition hover:border-[#0A1A33]"
+                className="min-h-[42px] rounded-md border border-[#DDE4EE] bg-white px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-[#0A1A33] transition hover:border-[#0A1A33]"
               >
                 BACK TO HOME
               </button>
@@ -1180,6 +1358,7 @@ export function App() {
           reservation={returningReservation}
           vehicle={returningVehicle}
           stations={stations}
+          canSimulateLateReturn={canSimulateLateReturn}
           onConfirmReturn={handleConfirmReturn}
           onClose={() => setReturningReservation(null)}
         />
@@ -1189,13 +1368,13 @@ export function App() {
         role={toast?.tone === 'error' ? 'alert' : 'status'}
         aria-live={toast?.tone === 'error' ? 'assertive' : 'polite'}
         aria-atomic="true"
-        className={`pointer-events-none fixed bottom-6 z-50 ${
-          showTelemetry ? 'right-6 xl:right-[144px]' : 'right-6'
+        className={`pb-safe pointer-events-none fixed inset-x-3 bottom-3 z-50 sm:inset-x-auto sm:bottom-6 sm:max-w-md ${
+          showTelemetry ? 'sm:right-6 xl:right-[144px]' : 'sm:right-6'
         }`}
       >
         {toast && (
           <div
-            className={`pointer-events-auto flex items-center gap-2.5 rounded-md border px-4 py-3 text-xs font-medium text-white shadow-xl ${
+            className={`rydio-toast-enter pointer-events-auto flex items-center gap-2.5 rounded-md border px-4 py-3 text-xs font-medium text-white shadow-xl ${
               toast.tone === 'error'
                 ? 'border-[#991B1B] bg-[#991B1B]'
                 : 'border-[#0A1A33] bg-[#0A1A33]'
@@ -1206,7 +1385,7 @@ export function App() {
             ) : (
               <CheckCircle2 className="h-4 w-4 shrink-0 text-[#C4D2E8]" />
             )}
-            <span>{toast.message}</span>
+            <span className="break-words">{toast.message}</span>
           </div>
         )}
       </div>

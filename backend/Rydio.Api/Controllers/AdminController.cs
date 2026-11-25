@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Rydio.Api.Data;
 using Rydio.Api.Models;
 using Rydio.Api.Security;
+using Rydio.Api.Services;
 
 namespace Rydio.Api.Controllers;
 
@@ -18,8 +19,8 @@ public class AdminController(RydioDbContext db) : ControllerBase
         string Name,
         string TypeId,
         string StationId,
-        int HourlyRateMkd,
-        int FullDayRateMkd,
+        int HourlyRateMkd = 0,
+        int FullDayRateMkd = 0,
         int BatteryPercent = 100,
         int RangeKm = 50,
         int MaxSpeedKmh = 25);
@@ -27,6 +28,7 @@ public class AdminController(RydioDbContext db) : ControllerBase
     public record UpdateVehicleRequest(
         string? Code,
         string? Name,
+        string? TypeId,
         string? StationId,
         int? HourlyRateMkd,
         int? FullDayRateMkd,
@@ -53,8 +55,22 @@ public class AdminController(RydioDbContext db) : ControllerBase
             return BadRequest(new { message = "Vehicle name is required." });
         if (string.IsNullOrWhiteSpace(code))
             return BadRequest(new { message = "Vehicle fleet code is required." });
-        if (req.HourlyRateMkd < 50)
+
+        var vehicleType = await db.VehicleTypes.FindAsync(req.TypeId);
+        if (vehicleType is null)
+            return BadRequest(new { message = "Selected vehicle type does not exist." });
+
+        var stationExists = await db.Stations.AnyAsync(s => s.Id == req.StationId);
+        if (!stationExists)
+            return BadRequest(new { message = "Selected docking station does not exist." });
+
+        var resolvedHourly = req.HourlyRateMkd > 0 ? req.HourlyRateMkd : vehicleType.DefaultHourlyRateMkd;
+        if (resolvedHourly < 50)
             return BadRequest(new { message = "Hourly rate must be at least 50 MKD." });
+
+        var resolvedFullDay = req.FullDayRateMkd > 0
+            ? Math.Max(resolvedHourly, req.FullDayRateMkd)
+            : PricingService.DeriveFullDayRateMkd(resolvedHourly, vehicleType.FullDayDiscountPercent);
 
         var codeLower = code.ToLowerInvariant();
         if (await db.Vehicles.AnyAsync(v => v.Code.ToLower() == codeLower))
@@ -68,13 +84,13 @@ public class AdminController(RydioDbContext db) : ControllerBase
         {
             Code = code,
             Name = name,
-            TypeId = req.TypeId,
+            TypeId = vehicleType.Id,
             StationId = req.StationId,
-            HourlyRateMkd = req.HourlyRateMkd,
-            FullDayRateMkd = req.FullDayRateMkd,
+            HourlyRateMkd = resolvedHourly,
+            FullDayRateMkd = resolvedFullDay,
             BatteryPercent = Math.Clamp(req.BatteryPercent, 0, 100),
-            RangeKm = req.RangeKm,
-            MaxSpeedKmh = req.MaxSpeedKmh,
+            RangeKm = Math.Max(5, req.RangeKm),
+            MaxSpeedKmh = Math.Max(10, req.MaxSpeedKmh),
             InMaintenance = false,
         };
         db.Vehicles.Add(vehicle);
@@ -106,9 +122,35 @@ public class AdminController(RydioDbContext db) : ControllerBase
             vehicle.Name = nextName;
         }
 
-        if (req.StationId is not null) vehicle.StationId = req.StationId;
-        if (req.HourlyRateMkd.HasValue) vehicle.HourlyRateMkd = Math.Max(50, req.HourlyRateMkd.Value);
-        if (req.FullDayRateMkd.HasValue) vehicle.FullDayRateMkd = Math.Max(50, req.FullDayRateMkd.Value);
+        if (!string.IsNullOrWhiteSpace(req.TypeId))
+        {
+            if (!await db.VehicleTypes.AnyAsync(t => t.Id == req.TypeId))
+                return BadRequest(new { message = "Selected vehicle type does not exist." });
+            vehicle.TypeId = req.TypeId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(req.StationId))
+        {
+            if (!await db.Stations.AnyAsync(s => s.Id == req.StationId))
+                return BadRequest(new { message = "Selected docking station does not exist." });
+            vehicle.StationId = req.StationId;
+        }
+
+        if (req.HourlyRateMkd.HasValue)
+        {
+            vehicle.HourlyRateMkd = Math.Max(50, req.HourlyRateMkd.Value);
+            if (!req.FullDayRateMkd.HasValue)
+            {
+                var vt = await db.VehicleTypes.FindAsync(vehicle.TypeId);
+                vehicle.FullDayRateMkd = PricingService.DeriveFullDayRateMkd(
+                    vehicle.HourlyRateMkd,
+                    vt?.FullDayDiscountPercent ?? 20);
+            }
+        }
+
+        if (req.FullDayRateMkd.HasValue)
+            vehicle.FullDayRateMkd = Math.Max(vehicle.HourlyRateMkd, req.FullDayRateMkd.Value);
+
         if (req.BatteryPercent.HasValue) vehicle.BatteryPercent = Math.Clamp(req.BatteryPercent.Value, 0, 100);
         if (req.InMaintenance.HasValue) vehicle.InMaintenance = req.InMaintenance.Value;
 
@@ -123,6 +165,18 @@ public class AdminController(RydioDbContext db) : ControllerBase
         if (vehicle is null) return NotFound(new { message = "Vehicle not found." });
         if (await db.Reservations.AnyAsync(r => r.VehicleId == id && (r.Status == "Reserved" || r.Status == "Active")))
             return Conflict(new { message = "Cannot delete a vehicle while it has an active or upcoming reservation." });
+
+        // Preserve historical Completed & Cancelled reservations and their vehicle display name instead of cascade-deleting history
+        var historicalReservations = await db.Reservations
+            .Where(r => r.VehicleId == id)
+            .ToListAsync();
+
+        foreach (var r in historicalReservations)
+        {
+            if (string.IsNullOrWhiteSpace(r.VehicleName))
+                r.VehicleName = vehicle.Name;
+            r.VehicleId = null;
+        }
 
         db.Vehicles.Remove(vehicle);
         await db.SaveChangesAsync();
@@ -278,6 +332,22 @@ public class AdminController(RydioDbContext db) : ControllerBase
         if (res is null) return NotFound(new { message = "Reservation not found." });
         if (req.Status is not ("Reserved" or "Active" or "Completed" or "Cancelled"))
             return BadRequest(new { message = "Invalid status." });
+
+        if (req.Status == "Completed" && !res.ActualReturnTime.HasValue)
+        {
+            var returnTime = DateTimeOffset.UtcNow;
+            res.ActualReturnTime = returnTime;
+            res.ReturnStationId ??= res.PickupStationId;
+
+            if (res.LatePenaltyMkd == 0 && !string.IsNullOrEmpty(res.VehicleId))
+            {
+                var vehicle = await db.Vehicles.FindAsync(res.VehicleId);
+                if (vehicle is not null)
+                {
+                    res.LatePenaltyMkd = PricingService.CalculateLatePenalty(vehicle, res.EndTime, returnTime);
+                }
+            }
+        }
 
         res.Status = req.Status;
         await db.SaveChangesAsync();

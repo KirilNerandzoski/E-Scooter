@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { X, AlertCircle, ShieldCheck, ArrowRight } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
 import { Modal } from './Modal';
@@ -14,6 +14,8 @@ interface AuthModalProps {
   onLocalRegisterSuccess: (newUser: UserAccount) => void;
   onClose: () => void;
 }
+
+const AUTH_MODES: readonly ('login' | 'register')[] = ['login', 'register'];
 
 export function AuthModal({
   initialMode = 'login',
@@ -31,6 +33,34 @@ export function AuthModal({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const tabRefs = useRef<Record<'login' | 'register', HTMLButtonElement | null>>({
+    login: null,
+    register: null,
+  });
+
+  const switchMode = (next: 'login' | 'register', moveFocus = false) => {
+    setMode(next);
+    setError(null);
+    if (moveFocus) {
+      tabRefs.current[next]?.focus();
+    }
+  };
+
+  const handleTabKeyDown = (e: React.KeyboardEvent) => {
+    const idx = AUTH_MODES.indexOf(mode);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const delta = e.key === 'ArrowRight' ? 1 : -1;
+      const next = AUTH_MODES[(idx + delta + AUTH_MODES.length) % AUTH_MODES.length];
+      switchMode(next, true);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      switchMode('login', true);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      switchMode('register', true);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,9 +151,12 @@ export function AuthModal({
 
   return (
     <Modal labelledBy="auth-modal-title" maxWidthClass="max-w-md" onClose={onClose}>
-      <div className="flex items-start justify-between rounded-t-lg border-b border-[#DDE2E8] bg-white px-6 py-5">
+      <div className="flex items-start justify-between gap-3 rounded-t-lg border-b border-[#DDE2E8] bg-white px-4 py-4 sm:px-6 sm:py-5">
         <div>
-          <h2 id="auth-modal-title" className="font-display text-2xl font-normal text-[#0A1A33]">
+          <h2
+            id="auth-modal-title"
+            className="font-display text-xl font-normal text-[#0A1A33] sm:text-2xl"
+          >
             {mode === 'login' ? 'Sign in to Rydio' : 'Create your Rydio account'}
           </h2>
           <p className="mt-1 text-xs text-[#515F73]">
@@ -145,17 +178,21 @@ export function AuthModal({
       <div
         role="tablist"
         aria-label="Authentication mode"
-        className="grid grid-cols-2 border-b border-[#DDE2E8] bg-white px-6"
+        onKeyDown={handleTabKeyDown}
+        className="grid grid-cols-2 border-b border-[#DDE2E8] bg-white px-4 sm:px-6"
       >
         <button
+          ref={(el) => {
+            tabRefs.current.login = el;
+          }}
+          id="auth-tab-login"
           type="button"
           role="tab"
+          tabIndex={mode === 'login' ? 0 : -1}
           aria-selected={mode === 'login'}
-          onClick={() => {
-            setMode('login');
-            setError(null);
-          }}
-          className={`border-b-2 py-3 text-xs font-medium tracking-[0.14em] transition-colors ${
+          aria-controls="auth-tabpanel"
+          onClick={() => switchMode('login')}
+          className={`min-h-[42px] border-b-2 py-3 text-xs font-medium tracking-[0.14em] transition-colors ${
             mode === 'login'
               ? 'border-[#0A1A33] text-[#0A1A33]'
               : 'border-transparent text-[#515F73] hover:text-[#0A1A33]'
@@ -164,14 +201,17 @@ export function AuthModal({
           SIGN IN
         </button>
         <button
+          ref={(el) => {
+            tabRefs.current.register = el;
+          }}
+          id="auth-tab-register"
           type="button"
           role="tab"
+          tabIndex={mode === 'register' ? 0 : -1}
           aria-selected={mode === 'register'}
-          onClick={() => {
-            setMode('register');
-            setError(null);
-          }}
-          className={`border-b-2 py-3 text-xs font-medium tracking-[0.14em] transition-colors ${
+          aria-controls="auth-tabpanel"
+          onClick={() => switchMode('register')}
+          className={`min-h-[42px] border-b-2 py-3 text-xs font-medium tracking-[0.14em] transition-colors ${
             mode === 'register'
               ? 'border-[#0A1A33] text-[#0A1A33]'
               : 'border-transparent text-[#515F73] hover:text-[#0A1A33]'
@@ -181,7 +221,13 @@ export function AuthModal({
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 p-6">
+      <form
+        id="auth-tabpanel"
+        role="tabpanel"
+        aria-labelledby={mode === 'login' ? 'auth-tab-login' : 'auth-tab-register'}
+        onSubmit={(e) => void handleSubmit(e)}
+        className="space-y-4 p-4 sm:p-6"
+      >
         {error && (
           <div
             role="alert"
@@ -275,7 +321,7 @@ export function AuthModal({
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex w-full items-center justify-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-50"
+          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-50"
         >
           {submitting
             ? 'PLEASE WAIT...'
@@ -286,20 +332,18 @@ export function AuthModal({
         </button>
 
         <details className="border-t border-[#DDE2E8] pt-3 text-[11px] text-[#515F73]">
-          <summary className="cursor-pointer font-medium tracking-[0.08em] text-[#515F73] hover:text-[#0A1A33]">
+          <summary className="cursor-pointer py-1 font-medium tracking-[0.08em] text-[#515F73] hover:text-[#0A1A33]">
             Evaluation access (SuperAdmin)
           </summary>
-          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-md border border-[#DDE2E8] bg-white px-3.5 py-2.5">
-            <div className="flex items-center gap-2">
+          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-md border border-[#DDE2E8] bg-white px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#0A1A33]" />
-              <span>
-                <strong className="text-[#0A1A33]">superadmin@rydio.mk</strong>
-              </span>
+              <strong className="truncate text-[#0A1A33]">superadmin@rydio.mk</strong>
             </div>
             <button
               type="button"
               onClick={fillSuperAdmin}
-              className="shrink-0 rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
+              className="min-h-[34px] shrink-0 rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
             >
               FILL
             </button>

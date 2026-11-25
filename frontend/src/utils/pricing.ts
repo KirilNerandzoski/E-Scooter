@@ -1,9 +1,61 @@
-import type { PriceBreakdown, Reservation, Vehicle } from '../types/rydio';
+import type {
+  MonthlyRevenuePoint,
+  PriceBreakdown,
+  Reservation,
+  Vehicle,
+} from '../types/rydio';
 
 export const MAX_RENTAL_DAYS = 7;
 export const MAX_RENTAL_HOURS = MAX_RENTAL_DAYS * 24;
 export const LATE_PENALTY_MULTIPLIER = 1.5;
 export const CANCEL_CUTOFF_HOURS = 1;
+export const PICKUP_EARLY_WINDOW_MINUTES = 30;
+
+const MONTH_INDEX_BY_ABBR: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
+};
+
+/**
+ * Generates a collision-safe uppercase hexadecimal reservation ID matching backend RES-XXXXXXXX format.
+ */
+export function createClientReservationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(4);
+    crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase();
+    return `RES-${hex}`;
+  }
+  return `RES-${Math.floor(Math.random() * 0xffffffff)
+    .toString(16)
+    .padStart(8, '0')
+    .toUpperCase()}`;
+}
+
+/**
+ * Computes the default full-day rate cap from a vehicle's hourly tariff and its VehicleType's full-day discount percentage.
+ */
+export function deriveFullDayRateMkd(
+  hourlyRateMkd: number,
+  fullDayDiscountPercent: number = 20
+): number {
+  const safeHourly = Math.max(50, Number.isFinite(hourlyRateMkd) ? hourlyRateMkd : 180);
+  const clampedDiscount = Math.min(90, Math.max(0, fullDayDiscountPercent));
+  const derived = Math.round((safeHourly * 24 * (100 - clampedDiscount)) / 100);
+  return Math.max(safeHourly, derived);
+}
 
 /**
  * Checks whether [startA, endA) overlaps with [startB, endB).
@@ -66,7 +118,7 @@ export function isVehicleAvailable(
 
   const nowMs = now.getTime();
   return !reservations.some((res) => {
-    if (res.vehicleId !== vehicle.id) return false;
+    if (!res.vehicleId || res.vehicleId !== vehicle.id) return false;
     if (res.status === 'Cancelled' || res.status === 'Completed') return false;
     const resStartMs = new Date(res.startTime).getTime();
     const resEndMs = new Date(res.endTime).getTime();
@@ -80,13 +132,55 @@ export function isVehicleAvailable(
 }
 
 /**
+ * Validates a catalog/home search window for well-formed timestamps, non-past start (5-min grace),
+ * positive duration, and maximum 7-day cap.
+ */
+export function validateFilterWindow(
+  startValue: string,
+  endValue: string,
+  now: Date = new Date()
+): { valid: boolean; error?: string; canResetToNow?: boolean } {
+  const startIso = toSafeIso(startValue);
+  const endIso = toSafeIso(endValue);
+  if (!startIso || !endIso) {
+    return { valid: false, error: 'Select both a valid start and return date/time.' };
+  }
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const graceNow = new Date(now.getTime() - 5 * 60 * 1000);
+  if (start < graceNow) {
+    return {
+      valid: false,
+      error: 'Start time is in the past — tap Now to refresh your pickup window.',
+      canResetToNow: true,
+    };
+  }
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) {
+    return {
+      valid: false,
+      error: 'Select a valid start and return time (return must be after start).',
+    };
+  }
+  const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+  if (totalHours > MAX_RENTAL_HOURS) {
+    return {
+      valid: false,
+      error: `Maximum rental duration is ${MAX_RENTAL_DAYS} days (${MAX_RENTAL_HOURS} hours).`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Validates booking window (no past start, end > start, max 7 days) and calculates price with automatic full-day discount.
  */
 export function calculateReservationPrice(
   vehicle: Vehicle,
   startIso: string,
   endIso: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  fullDayDiscountPercent: number = 20
 ): PriceBreakdown {
   const start = new Date(startIso);
   const end = new Date(endIso);
@@ -154,12 +248,15 @@ export function calculateReservationPrice(
   const fullDays = Math.floor(totalHours / 24);
   const remainingHours = totalHours % 24;
   const undiscountedTotal = totalHours * vehicle.hourlyRateMkd;
+  const fullDayCap =
+    vehicle.fullDayRateMkd > 0
+      ? vehicle.fullDayRateMkd
+      : deriveFullDayRateMkd(vehicle.hourlyRateMkd, fullDayDiscountPercent);
 
-  // Full-day pricing: each 24h block uses vehicle.fullDayRateMkd; if remaining hours >= 8, cap at fullDayRateMkd
-  let discountedTotal = fullDays * vehicle.fullDayRateMkd;
+  let discountedTotal = fullDays * fullDayCap;
   if (remainingHours > 0) {
     const remainingHourlyCost = remainingHours * vehicle.hourlyRateMkd;
-    discountedTotal += Math.min(remainingHourlyCost, vehicle.fullDayRateMkd);
+    discountedTotal += Math.min(remainingHourlyCost, fullDayCap);
   }
 
   const discountAppliedMkd = Math.max(0, undiscountedTotal - discountedTotal);
@@ -195,6 +292,58 @@ export function calculateLatePenalty(
 }
 
 /**
+ * Pickup window guard: customers can pick up a Reserved booking starting 30 minutes before startTime
+ * and before endTime (Admin/SuperAdmin may override).
+ */
+export function getPickupEligibility(
+  reservation: Reservation,
+  isAdminOverride: boolean = false,
+  now: Date = new Date(),
+  allReservations?: Reservation[]
+): { canPickUp: boolean; reason?: string } {
+  if (reservation.status !== 'Reserved') {
+    return { canPickUp: false, reason: 'Only reserved bookings can be picked up.' };
+  }
+  if (!reservation.vehicleId) {
+    return { canPickUp: false, reason: 'Assigned vehicle is no longer in the fleet.' };
+  }
+  if (
+    allReservations?.some(
+      (r) =>
+        r.id !== reservation.id &&
+        r.vehicleId === reservation.vehicleId &&
+        r.status === 'Active'
+    )
+  ) {
+    return {
+      canPickUp: false,
+      reason: 'This vehicle has not yet been returned from a prior active ride.',
+    };
+  }
+  if (isAdminOverride) {
+    return { canPickUp: true };
+  }
+  const startMs = new Date(reservation.startTime).getTime();
+  const endMs = new Date(reservation.endTime).getTime();
+  const nowMs = now.getTime();
+  const earliestMs = startMs - PICKUP_EARLY_WINDOW_MINUTES * 60 * 1000;
+
+  if (nowMs >= endMs) {
+    return {
+      canPickUp: false,
+      reason: 'Reservation window has already ended.',
+    };
+  }
+  if (nowMs < earliestMs) {
+    return {
+      canPickUp: false,
+      reason: `Pickup opens ${PICKUP_EARLY_WINDOW_MINUTES} min before start (${formatShortDateTime(new Date(earliestMs).toISOString())}).`,
+    };
+  }
+  return { canPickUp: true };
+}
+
+/**
  * Cancellation is permitted only up to 1 hour before reservation start.
  */
 export function canCancelReservation(reservation: Reservation, now: Date = new Date()): boolean {
@@ -204,6 +353,91 @@ export function canCancelReservation(reservation: Reservation, now: Date = new D
   return diffHours >= CANCEL_CUTOFF_HOURS;
 }
 
+/**
+ * Aggregates monthly revenue strictly from earned bookings (Active and Completed — never Reserved or Cancelled),
+ * ordered chronologically by Year-Month.
+ */
+export function buildMonthlyRevenue(
+  baseline: MonthlyRevenuePoint[],
+  reservations: Reservation[],
+  referenceNow: Date = new Date()
+): MonthlyRevenuePoint[] {
+  const refYear = referenceNow.getUTCFullYear();
+  const refMonth = referenceNow.getUTCMonth() + 1;
+
+  const map = new Map<
+    number,
+    { year: number; monthNum: number; rawLabel: string; revenueMkd: number; rides: number }
+  >();
+
+  baseline.forEach((b, idx) => {
+    let ym: number;
+    let year: number;
+    let monthNum: number;
+    if (b.sortOrder && b.sortOrder >= 190001) {
+      ym = b.sortOrder;
+      year = Math.floor(ym / 100);
+      monthNum = ym % 100;
+    } else {
+      const parsed = MONTH_INDEX_BY_ABBR[b.month.trim().toLowerCase()];
+      monthNum = parsed ?? Math.min(12, Math.max(1, idx + 1));
+      year = refMonth < 6 && monthNum >= 6 ? refYear - 1 : refYear;
+      ym = year * 100 + monthNum;
+    }
+    map.set(ym, {
+      year,
+      monthNum,
+      rawLabel: b.month,
+      revenueMkd: b.revenueMkd,
+      rides: b.rides,
+    });
+  });
+
+  reservations.forEach((r) => {
+    if (r.status !== 'Active' && r.status !== 'Completed') return;
+    const d = new Date(r.actualReturnTime ?? r.startTime);
+    if (Number.isNaN(d.getTime())) return;
+    const year = d.getUTCFullYear();
+    const monthNum = d.getUTCMonth() + 1;
+    const ym = year * 100 + monthNum;
+    const shortLabel = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+    const earned = r.totalPriceMkd + r.latePenaltyMkd;
+
+    const existing = map.get(ym);
+    if (existing) {
+      existing.revenueMkd += earned;
+      existing.rides += 1;
+    } else {
+      map.set(ym, {
+        year,
+        monthNum,
+        rawLabel: shortLabel,
+        revenueMkd: earned,
+        rides: 1,
+      });
+    }
+  });
+
+  const sortedEntries = Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
+  const labelCounts = new Map<string, number>();
+  sortedEntries.forEach(([, v]) => {
+    const key = v.rawLabel.toLowerCase();
+    labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
+  });
+
+  return sortedEntries.map(([ym, v]) => {
+    const hasDuplicate = (labelCounts.get(v.rawLabel.toLowerCase()) ?? 0) > 1;
+    return {
+      month: hasDuplicate
+        ? `${v.rawLabel} '${String(v.year % 100).padStart(2, '0')}`
+        : v.rawLabel,
+      sortOrder: ym,
+      revenueMkd: v.revenueMkd,
+      rides: v.rides,
+    };
+  });
+}
+
 export function formatMkd(amount: number): string {
   return `${amount.toLocaleString('en-US')} MKD`;
 }
@@ -211,6 +445,16 @@ export function formatMkd(amount: number): string {
 export function toLocalDateTimeInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function getMinStartDateTimeLocal(now: Date = new Date()): string {
+  return toLocalDateTimeInput(now);
+}
+
+export function getMaxEndDateTimeLocal(startLocal: string, now: Date = new Date()): string {
+  const startIso = toSafeIso(startLocal);
+  const base = startIso ? new Date(startIso) : now;
+  return toLocalDateTimeInput(new Date(base.getTime() + MAX_RENTAL_HOURS * 60 * 60 * 1000));
 }
 
 export function formatShortDateTime(iso: string): string {
