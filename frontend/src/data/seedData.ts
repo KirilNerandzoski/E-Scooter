@@ -325,11 +325,4 @@ export const INITIAL_RESERVATIONS: Reservation[] = [
   },
 ];
 
-export const HISTORICAL_MONTHLY_REVENUE: MonthlyRevenuePoint[] = [
-  { month: 'Jun', revenueMkd: 68400, rides: 112 },
-  { month: 'Jul', revenueMkd: 94200, rides: 158 },
-  { month: 'Aug', revenueMkd: 112800, rides: 194 },
-  { month: 'Sep', revenueMkd: 104500, rides: 176 },
-  { month: 'Oct', revenueMkd: 86900, rides: 143 },
-  { month: 'Nov', revenueMkd: 91300, rides: 151 },
-];
+export const HISTORICAL_MONTHLY_REVENUE: MonthlyRevenuePoint[] = [];

@@ -11,21 +11,6 @@ export const LATE_PENALTY_MULTIPLIER = 1.5;
 export const CANCEL_CUTOFF_HOURS = 1;
 export const PICKUP_EARLY_WINDOW_MINUTES = 30;
 
-const MONTH_INDEX_BY_ABBR: Record<string, number> = {
-  jan: 1,
-  feb: 2,
-  mar: 3,
-  apr: 4,
-  may: 5,
-  jun: 6,
-  jul: 7,
-  aug: 8,
-  sep: 9,
-  oct: 10,
-  nov: 11,
-  dec: 12,
-};
-
 /**
  * Generates a collision-safe uppercase hexadecimal reservation ID matching backend RES-XXXXXXXX format.
  */
@@ -354,48 +339,40 @@ export function canCancelReservation(reservation: Reservation, now: Date = new D
 }
 
 /**
- * Aggregates monthly revenue strictly from earned bookings (Active and Completed — never Reserved or Cancelled),
- * ordered chronologically by Year-Month.
+ * Aggregates live lifetime monthly sales strictly from Completed reservations across all users
+ * (no predefined numbers). Initializes a rolling 6-month window ending at referenceNow with 0 MKD
+ * and includes any additional lifetime months that have completed sales, ordered chronologically.
  */
 export function buildMonthlyRevenue(
-  baseline: MonthlyRevenuePoint[],
   reservations: Reservation[],
   referenceNow: Date = new Date()
 ): MonthlyRevenuePoint[] {
   const refYear = referenceNow.getUTCFullYear();
-  const refMonth = referenceNow.getUTCMonth() + 1;
+  const refMonthIdx = referenceNow.getUTCMonth();
 
   const map = new Map<
     number,
     { year: number; monthNum: number; rawLabel: string; revenueMkd: number; rides: number }
   >();
 
-  baseline.forEach((b, idx) => {
-    let ym: number;
-    let year: number;
-    let monthNum: number;
-    if (b.sortOrder && b.sortOrder >= 190001) {
-      ym = b.sortOrder;
-      year = Math.floor(ym / 100);
-      monthNum = ym % 100;
-    } else {
-      const parsed = MONTH_INDEX_BY_ABBR[b.month.trim().toLowerCase()];
-      monthNum = parsed ?? Math.min(12, Math.max(1, idx + 1));
-      year = refMonth < 6 && monthNum >= 6 ? refYear - 1 : refYear;
-      ym = year * 100 + monthNum;
-    }
+  for (let offset = -5; offset <= 0; offset++) {
+    const mDate = new Date(Date.UTC(refYear, refMonthIdx + offset, 1));
+    const year = mDate.getUTCFullYear();
+    const monthNum = mDate.getUTCMonth() + 1;
+    const ym = year * 100 + monthNum;
+    const shortLabel = mDate.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
     map.set(ym, {
       year,
       monthNum,
-      rawLabel: b.month,
-      revenueMkd: b.revenueMkd,
-      rides: b.rides,
+      rawLabel: shortLabel,
+      revenueMkd: 0,
+      rides: 0,
     });
-  });
+  }
 
   reservations.forEach((r) => {
-    if (r.status !== 'Active' && r.status !== 'Completed') return;
-    const d = new Date(r.actualReturnTime ?? r.startTime);
+    if (r.status !== 'Completed') return;
+    const d = new Date(r.actualReturnTime ?? r.endTime);
     if (Number.isNaN(d.getTime())) return;
     const year = d.getUTCFullYear();
     const monthNum = d.getUTCMonth() + 1;

@@ -435,35 +435,42 @@ public sealed class RydioBackendTests : IDisposable
         Assert.Equal(250, createdVeh.HourlyRateMkd);
         Assert.Equal(4500, createdVeh.FullDayRateMkd);
 
-        // Monthly revenue excludes Reserved & Cancelled and orders months chronologically
-        var baseline = new List<MonthlyRevenueRecord>
-        {
-            new() { Month = "Oct", SortOrder = 202610, RevenueMkd = 10000, Rides = 10 },
-            new() { Month = "Nov", SortOrder = 202611, RevenueMkd = 20000, Rides = 20 },
-        };
+        // Live lifetime monthly sales: zero predefined baseline, counts ONLY Completed reservations in completion month
         var sampleReservations = new List<Reservation>
         {
-            // Earned in Jan 2027 (inserted first to test chronological sorting!)
+            // Completed in Jan 2027 (inserted first to test chronological sorting!)
             new()
             {
                 Status = "Completed",
                 StartTime = new DateTimeOffset(2027, 1, 10, 12, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2027, 1, 10, 13, 0, 0, TimeSpan.Zero),
                 ActualReturnTime = new DateTimeOffset(2027, 1, 10, 14, 0, 0, TimeSpan.Zero),
                 TotalPriceMkd = 500,
                 LatePenaltyMkd = 150,
             },
-            // Earned in Dec 2026
+            // Completed in Nov 2026
+            new()
+            {
+                Status = "Completed",
+                StartTime = new DateTimeOffset(2026, 11, 5, 9, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2026, 11, 5, 11, 0, 0, TimeSpan.Zero),
+                ActualReturnTime = new DateTimeOffset(2026, 11, 5, 11, 0, 0, TimeSpan.Zero),
+                TotalPriceMkd = 800,
+            },
+            // Active (not yet completed) -> NOT counted until Completed
             new()
             {
                 Status = "Active",
-                StartTime = new DateTimeOffset(2026, 12, 5, 9, 0, 0, TimeSpan.Zero),
-                TotalPriceMkd = 800,
+                StartTime = new DateTimeOffset(2026, 11, 12, 9, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2026, 11, 12, 11, 0, 0, TimeSpan.Zero),
+                TotalPriceMkd = 700,
             },
-            // Unstarted Reserved booking in Dec 2026 -> MUST NOT be counted as earned revenue
+            // Unstarted Reserved booking -> MUST NOT be counted
             new()
             {
                 Status = "Reserved",
                 StartTime = new DateTimeOffset(2026, 12, 20, 9, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2026, 12, 20, 12, 0, 0, TimeSpan.Zero),
                 TotalPriceMkd = 9999,
             },
             // Cancelled booking -> MUST NOT be counted
@@ -471,19 +478,21 @@ public sealed class RydioBackendTests : IDisposable
             {
                 Status = "Cancelled",
                 StartTime = new DateTimeOffset(2026, 11, 15, 9, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2026, 11, 15, 12, 0, 0, TimeSpan.Zero),
                 TotalPriceMkd = 5000,
             },
         };
 
         var revenue = PricingService.BuildMonthlyRevenue(
-            baseline,
             sampleReservations,
             new DateTimeOffset(2026, 11, 25, 0, 0, 0, TimeSpan.Zero));
 
-        Assert.Equal(["Oct", "Nov", "Dec", "Jan"], revenue.Select(r => r.Month).ToArray());
-        Assert.Equal(20000, revenue.Single(r => r.Month == "Nov").RevenueMkd);
-        Assert.Equal(800, revenue.Single(r => r.Month == "Dec").RevenueMkd);
+        Assert.Equal(["Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Jan"], revenue.Select(r => r.Month).ToArray());
+        Assert.Equal(0, revenue.Single(r => r.Month == "Oct").RevenueMkd);
+        Assert.Equal(800, revenue.Single(r => r.Month == "Nov").RevenueMkd);
+        Assert.Equal(1, revenue.Single(r => r.Month == "Nov").Rides);
         Assert.Equal(650, revenue.Single(r => r.Month == "Jan").RevenueMkd);
+        Assert.Equal(1, revenue.Single(r => r.Month == "Jan").Rides);
     }
 
     [Fact]

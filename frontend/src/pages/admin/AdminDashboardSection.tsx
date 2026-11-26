@@ -39,6 +39,19 @@ export function AdminDashboardSection({
     [monthlyRevenue]
   );
 
+  const completedRidesCount = useMemo(
+    () => monthlyRevenue.reduce((sum, m) => sum + m.rides, 0),
+    [monthlyRevenue]
+  );
+
+  const inProgressMkd = useMemo(
+    () =>
+      reservations
+        .filter((r) => r.status === 'Reserved' || r.status === 'Active')
+        .reduce((sum, r) => sum + r.totalPriceMkd + r.latePenaltyMkd, 0),
+    [reservations]
+  );
+
   const popularVehicles = useMemo(() => {
     const counts = new Map<string, number>();
     reservations.forEach((r) => {
@@ -81,10 +94,14 @@ export function AdminDashboardSection({
       <div className="grid gap-3 min-[380px]:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
           <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
-            EARNED REVENUE
+            LIFETIME SALES
           </p>
           <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-[#0A1A33] sm:mt-2 sm:text-2xl">
             {formatMkd(totalRevenueMkd)}
+          </p>
+          <p className="tabular-nums mt-1 text-[11px] text-[#515F73]">
+            {completedRidesCount} completed {completedRidesCount === 1 ? 'ride' : 'rides'}
+            {inProgressMkd > 0 ? ` · ${formatMkd(inProgressMkd)} pending` : ''}
           </p>
         </div>
         <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
@@ -118,39 +135,56 @@ export function AdminDashboardSection({
           <div className="flex items-center justify-between gap-2">
             <div>
               <h2 className="font-display text-lg text-[#0A1A33] sm:text-xl">
-                Monthly Earned Revenue (MKD)
+                Monthly Revenue (MKD)
               </h2>
               <p className="mt-0.5 text-xs text-[#515F73]">
-                Completed and active rides only (unstarted bookings excluded)
+                Live lifetime sales added automatically when customer reservations are completed
               </p>
             </div>
             <BarChart3 className="h-4 w-4 shrink-0 text-[#515F73]" />
           </div>
 
-          <div className="mt-6 flex h-48 items-end gap-1.5 sm:mt-8 sm:h-52 sm:gap-3.5">
+          <div className="mt-6 flex h-52 items-end gap-1.5 sm:mt-8 sm:h-56 sm:gap-3.5">
             {monthlyRevenue.map((item) => {
-              const pct = Math.max(4, Math.round((item.revenueMkd / maxMonthlyRevenue) * 100));
+              const hasSales = item.revenueMkd > 0;
+              const pct = hasSales
+                ? Math.max(8, Math.round((item.revenueMkd / maxMonthlyRevenue) * 100))
+                : 0;
               const shortAmount =
-                item.revenueMkd >= 1000
-                  ? `${Math.round(item.revenueMkd / 1000)}k`
-                  : String(item.revenueMkd);
+                item.revenueMkd >= 10000
+                  ? `${(item.revenueMkd / 1000).toFixed(1).replace(/\.0$/, '')}k`
+                  : item.revenueMkd.toLocaleString('en-US');
               return (
                 <div
                   key={`${item.sortOrder ?? item.month}-${item.month}`}
+                  title={`${item.month}: ${formatMkd(item.revenueMkd)} (${item.rides} completed ${item.rides === 1 ? 'ride' : 'rides'})`}
                   className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:gap-2"
                 >
-                  <span className="tabular-nums text-[10px] font-medium text-[#515F73] sm:text-[11px]">
+                  <span
+                    className={`tabular-nums text-[10px] font-medium sm:text-[11px] ${
+                      hasSales ? 'text-[#0A1A33]' : 'text-[#8C97A8]'
+                    }`}
+                  >
                     {shortAmount}
                   </span>
                   <div className="flex h-36 w-full items-end rounded-t bg-[#F6F7F9] sm:h-40">
-                    <div
-                      style={{ height: `${pct}%` }}
-                      className="w-full rounded-t bg-[#0A1A33] transition-all duration-300 hover:bg-[#1E2D4A]"
-                    />
+                    {hasSales ? (
+                      <div
+                        style={{ height: `${pct}%` }}
+                        className="w-full rounded-t bg-[#0A1A33] transition-all duration-300 hover:bg-[#1E2D4A]"
+                      />
+                    ) : (
+                      <div className="h-[2px] w-full bg-[#DDE2E8]" />
+                    )}
                   </div>
-                  <span className="truncate text-[11px] font-medium text-[#0A1A33] sm:text-xs">
-                    {item.month}
-                  </span>
+                  <div className="text-center">
+                    <span className="block truncate text-[11px] font-medium text-[#0A1A33] sm:text-xs">
+                      {item.month}
+                    </span>
+                    <span className="tabular-nums block text-[10px] text-[#515F73]">
+                      {item.rides} {item.rides === 1 ? 'ride' : 'rides'}
+                    </span>
+                  </div>
                 </div>
               );
             })}

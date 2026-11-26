@@ -181,8 +181,7 @@ test('availability excludes maintenance and overlapping active/reserved bookings
   );
 });
 
-test('buildMonthlyRevenue counts only earned bookings in chronological order & RBAC invariants hold', () => {
-  const baseline = [{ month: 'Nov', sortOrder: 202611, revenueMkd: 10000, rides: 10 }];
+test('buildMonthlyRevenue tracks live lifetime Completed sales with zero predefined baseline & RBAC invariants hold', () => {
   const reservations: Reservation[] = [
     {
       id: 'RES-1',
@@ -207,6 +206,21 @@ test('buildMonthlyRevenue counts only earned bookings in chronological order & R
       customerName: 'B',
       customerEmail: 'b@example.mk',
       pickupStationId: 'st-plostad',
+      startTime: '2026-11-10T10:00:00Z',
+      endTime: '2026-11-10T12:00:00Z',
+      status: 'Active',
+      basePriceMkd: 720,
+      discountAppliedMkd: 0,
+      latePenaltyMkd: 0,
+      totalPriceMkd: 720,
+      createdAt: '2026-11-10T09:00:00Z',
+    },
+    {
+      id: 'RES-3',
+      vehicleId: 'veh-1',
+      customerName: 'C',
+      customerEmail: 'c@example.mk',
+      pickupStationId: 'st-plostad',
       startTime: '2026-12-10T10:00:00Z',
       endTime: '2026-12-10T12:00:00Z',
       status: 'Reserved',
@@ -218,12 +232,14 @@ test('buildMonthlyRevenue counts only earned bookings in chronological order & R
     },
   ];
 
-  const rev = buildMonthlyRevenue(baseline, reservations, new Date('2026-11-25T10:00:00Z'));
+  const rev = buildMonthlyRevenue(reservations, new Date('2026-11-25T10:00:00Z'));
   assert.deepEqual(
     rev.map((r) => r.month),
-    ['Nov', 'Jan']
+    ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Jan']
   );
-  assert.equal(rev[1].revenueMkd, 500);
+  assert.equal(rev.find((r) => r.month === 'Nov')?.revenueMkd, 0);
+  assert.equal(rev.find((r) => r.month === 'Jan')?.revenueMkd, 500);
+  assert.equal(rev.find((r) => r.month === 'Jan')?.rides, 1);
 
   // RBAC invariants
   assert.equal(isPrimarySuperAdminEmail('superadmin@rydio.mk'), true);

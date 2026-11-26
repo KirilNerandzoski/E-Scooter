@@ -99,8 +99,10 @@ public class CatalogController(RydioDbContext db) : ControllerBase
             if (canViewReports)
             {
                 registeredUsersCount = canManageUsers ? users.Count : await db.Users.CountAsync();
-                var baseMonths = await db.MonthlyRevenue.OrderBy(m => m.SortOrder).ToListAsync();
-                monthlyRevenue = PricingService.BuildMonthlyRevenue(baseMonths, reservations);
+                var allCompletedReservations = canManageReservations
+                    ? reservations
+                    : await db.Reservations.AsNoTracking().Where(r => r.Status == "Completed").ToListAsync();
+                monthlyRevenue = PricingService.BuildMonthlyRevenue(allCompletedReservations);
             }
         }
 

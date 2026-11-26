@@ -10,7 +10,6 @@ import { CatalogPage } from './pages/CatalogPage';
 import { StationsPage } from './pages/StationsPage';
 import { MyRidesPage } from './pages/MyRidesPage';
 import {
-  HISTORICAL_MONTHLY_REVENUE,
   INITIAL_RESERVATIONS,
   INITIAL_STATIONS,
   INITIAL_USERS,
@@ -173,9 +172,7 @@ export function App() {
   const [busyWindows, setBusyWindows] = useState<
     { vehicleId: string; startTime: string; endTime: string; status: ReservationStatus }[]
   >([]);
-  const [apiMonthlyRevenue, setApiMonthlyRevenue] = useState<MonthlyRevenuePoint[]>(
-    HISTORICAL_MONTHLY_REVENUE
-  );
+  const [apiMonthlyRevenue, setApiMonthlyRevenue] = useState<MonthlyRevenuePoint[]>([]);
 
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | null>(null);
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
@@ -223,9 +220,7 @@ export function App() {
       );
       setApiUsers(sanitizeUsersRbac(data.users));
       setApiRegisteredUsersCount(data.registeredUsersCount ?? data.users.length);
-      setApiMonthlyRevenue(
-        data.monthlyRevenue.length > 0 ? data.monthlyRevenue : HISTORICAL_MONTHLY_REVENUE
-      );
+      setApiMonthlyRevenue(data.monthlyRevenue);
       setApiLive(true);
       setSyncStatus('live');
     } catch {
@@ -259,9 +254,7 @@ export function App() {
         );
         setApiUsers(sanitizeUsersRbac(data.users));
         setApiRegisteredUsersCount(data.registeredUsersCount ?? data.users.length);
-        setApiMonthlyRevenue(
-          data.monthlyRevenue.length > 0 ? data.monthlyRevenue : HISTORICAL_MONTHLY_REVENUE
-        );
+        setApiMonthlyRevenue(data.monthlyRevenue);
         setApiLive(true);
         setSyncStatus('live');
       })
@@ -291,8 +284,8 @@ export function App() {
   }, [apiLive, apiCurrentUser, localUsers, currentUserId]);
 
   const monthlyRevenue = useMemo<MonthlyRevenuePoint[]>(() => {
-    if (apiLive) return apiMonthlyRevenue;
-    return buildMonthlyRevenue(HISTORICAL_MONTHLY_REVENUE, reservations);
+    if (apiLive && apiMonthlyRevenue.length > 0) return apiMonthlyRevenue;
+    return buildMonthlyRevenue(reservations);
   }, [apiLive, apiMonthlyRevenue, reservations]);
 
   useEffect(() => {

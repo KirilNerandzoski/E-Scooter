@@ -115,29 +115,18 @@ public static class DbSeeder
 
             await db.SaveChangesAsync();
         }
-
-        if (!await db.MonthlyRevenue.AnyAsync())
-        {
-            db.MonthlyRevenue.AddRange(
-                new MonthlyRevenueRecord { Month = "Jun", SortOrder = 1, RevenueMkd = 68400, Rides = 112 },
-                new MonthlyRevenueRecord { Month = "Jul", SortOrder = 2, RevenueMkd = 94200, Rides = 158 },
-                new MonthlyRevenueRecord { Month = "Aug", SortOrder = 3, RevenueMkd = 112800, Rides = 194 },
-                new MonthlyRevenueRecord { Month = "Sep", SortOrder = 4, RevenueMkd = 104500, Rides = 176 },
-                new MonthlyRevenueRecord { Month = "Oct", SortOrder = 5, RevenueMkd = 86900, Rides = 143 },
-                new MonthlyRevenueRecord { Month = "Nov", SortOrder = 6, RevenueMkd = 91300, Rides = 151 }
-            );
-            await db.SaveChangesAsync();
-        }
     }
 
     /// <summary>
     /// Safely upgrades pre-existing PostgreSQL deployments where EnsureCreatedAsync was previously used:
     /// adds Reservations.VehicleName, makes Reservations.VehicleId nullable, switches FK from CASCADE to SET NULL,
-    /// and ensures unique indexes on Vehicles.Name and Stations.Name.
+    /// ensures unique indexes on Vehicles.Name and Stations.Name, and clears legacy predefined MonthlyRevenue rows.
     /// </summary>
     private static async Task EnsurePostgresSchemaEvolutionAsync(RydioDbContext db)
     {
         const string sql = """
+            DELETE FROM "MonthlyRevenue";
+
             ALTER TABLE "Reservations" ADD COLUMN IF NOT EXISTS "VehicleName" text NOT NULL DEFAULT '';
 
             UPDATE "Reservations" r

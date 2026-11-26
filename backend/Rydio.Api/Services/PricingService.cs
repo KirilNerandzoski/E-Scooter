@@ -20,22 +20,6 @@ public static class PricingService
     public const int PickupEarlyWindowMinutes = 30;
     public const int CancelCutoffHours = 1;
 
-    private static readonly Dictionary<string, int> MonthNumbers = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Jan"] = 1,
-        ["Feb"] = 2,
-        ["Mar"] = 3,
-        ["Apr"] = 4,
-        ["May"] = 5,
-        ["Jun"] = 6,
-        ["Jul"] = 7,
-        ["Aug"] = 8,
-        ["Sep"] = 9,
-        ["Oct"] = 10,
-        ["Nov"] = 11,
-        ["Dec"] = 12,
-    };
-
     /// <summary>
     /// Computes the default full-day rate cap from a vehicle's hourly tariff and its VehicleType's full-day discount percentage.
     /// </summary>
@@ -121,65 +105,48 @@ public static class PricingService
     }
 
     /// <summary>
-    /// Aggregates monthly revenue strictly from earned bookings (Completed and Active — excluding unstarted Reserved and Cancelled),
-    /// ordered chronologically by Year-Month.
+    /// Aggregates live lifetime monthly sales strictly from Completed reservations across all users
+    /// (no predefined/seeded numbers). Initializes a rolling 6-month window ending at referenceNow
+    /// with 0 MKD and includes any additional lifetime months that have completed sales, ordered chronologically.
     /// </summary>
     public static List<MonthlyRevenueRecord> BuildMonthlyRevenue(
-        IEnumerable<MonthlyRevenueRecord> baseline,
         IEnumerable<Reservation> reservations,
         DateTimeOffset? referenceNow = null)
     {
         var refUtc = (referenceNow ?? DateTimeOffset.UtcNow).ToUniversalTime();
+        var anchorMonth = new DateTime(refUtc.Year, refUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var buckets = new SortedDictionary<int, (int MonthNum, int Year, string RawLabel, int RevenueMkd, int Rides)>();
 
-        foreach (var b in baseline.OrderBy(x => x.SortOrder))
+        for (var offset = -5; offset <= 0; offset++)
         {
-            int ym;
-            int year;
-            int monthNum;
-            if (b.SortOrder >= 190001)
-            {
-                ym = b.SortOrder;
-                year = ym / 100;
-                monthNum = ym % 100;
-            }
-            else if (MonthNumbers.TryGetValue(b.Month.Trim(), out var parsedMonth))
-            {
-                monthNum = parsedMonth;
-                year = refUtc.Month < 6 && parsedMonth >= 6 ? refUtc.Year - 1 : refUtc.Year;
-                ym = year * 100 + monthNum;
-            }
-            else
-            {
-                year = refUtc.Year;
-                monthNum = Math.Clamp(b.SortOrder, 1, 12);
-                ym = year * 100 + monthNum;
-            }
-
-            buckets[ym] = (monthNum, year, b.Month, b.RevenueMkd, b.Rides);
+            var m = anchorMonth.AddMonths(offset);
+            var ym = m.Year * 100 + m.Month;
+            var shortMonth = m.ToString("MMM", CultureInfo.InvariantCulture);
+            buckets[ym] = (m.Month, m.Year, shortMonth, 0, 0);
         }
 
         foreach (var r in reservations)
         {
-            // Only count actual earned bookings (Active or Completed), never unstarted Reserved or Cancelled
-            if (r.Status is not ("Active" or "Completed"))
+            // Strictly count Completed reservations toward monthly & lifetime sales
+            if (r.Status != "Completed")
                 continue;
 
-            var earnedAt = (r.ActualReturnTime ?? r.StartTime).ToUniversalTime();
-            var ym = earnedAt.Year * 100 + earnedAt.Month;
-            var shortMonth = earnedAt.ToString("MMM", CultureInfo.InvariantCulture);
+            var completedAt = (r.ActualReturnTime ?? r.EndTime).ToUniversalTime();
+            var ym = completedAt.Year * 100 + completedAt.Month;
+            var shortMonth = completedAt.ToString("MMM", CultureInfo.InvariantCulture);
+            var saleAmount = r.TotalPriceMkd + r.LatePenaltyMkd;
 
             if (buckets.TryGetValue(ym, out var existing))
             {
                 buckets[ym] = existing with
                 {
-                    RevenueMkd = existing.RevenueMkd + r.TotalPriceMkd + r.LatePenaltyMkd,
+                    RevenueMkd = existing.RevenueMkd + saleAmount,
                     Rides = existing.Rides + 1,
                 };
             }
             else
             {
-                buckets[ym] = (earnedAt.Month, earnedAt.Year, shortMonth, r.TotalPriceMkd + r.LatePenaltyMkd, 1);
+                buckets[ym] = (completedAt.Month, completedAt.Year, shortMonth, saleAmount, 1);
             }
         }
 
