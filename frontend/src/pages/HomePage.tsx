@@ -167,9 +167,9 @@ export function HomePage({
         {/* Hero Copy */}
         <div ref={heroCopyRef} className="max-w-2xl">
           <h1 className="font-display text-[2.125rem] font-light leading-[1.1] tracking-[-0.025em] text-indigo-depth sm:text-5xl lg:text-[3.5rem]">
-            Move with the current.
+            Move with the current
             <br />
-            Ride Skopje.
+            Ride Skopje
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-dilute-ink sm:mt-5 sm:text-base">
             Reserve electric scooters and e-bikes by the hour or full day across {stations.length}{' '}
