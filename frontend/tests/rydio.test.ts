@@ -7,8 +7,12 @@ import {
   canCancelReservation,
   createClientReservationId,
   deriveFullDayRateMkd,
+  formatReservationRange,
+  getOverlappingReservations,
   getPickupEligibility,
+  getUpcomingVehicleReservations,
   isVehicleAvailable,
+  suggestWindowAfterReservation,
   validateFilterWindow,
 } from '../src/utils/pricing.ts';
 import {
@@ -317,4 +321,60 @@ test('validateFilterWindow, custom discount fallback, and simultaneous active pi
   const blockedPickup = getPickupEligibility(nextSlot, false, now, [activeOut, nextSlot]);
   assert.equal(blockedPickup.canPickUp, false);
   assert.match(blockedPickup.reason ?? '', /not yet been returned/i);
+});
+
+test('reserved vehicle window helpers surface overlapping and upcoming bookings without hiding fleet items', () => {
+  const now = new Date('2026-11-26T18:00:00Z');
+  const bookings: Reservation[] = [
+    {
+      id: 'RES-LATE0001',
+      vehicleId: 'veh-1',
+      customerName: 'Rider 1',
+      customerEmail: 'r1@rydio.mk',
+      pickupStationId: 'st-plostad',
+      startTime: '2026-11-27T14:00:00Z',
+      endTime: '2026-11-27T18:00:00Z',
+      status: 'Reserved',
+      basePriceMkd: 720,
+      discountAppliedMkd: 0,
+      latePenaltyMkd: 0,
+      totalPriceMkd: 720,
+      createdAt: '2026-11-26T17:00:00Z',
+    },
+    {
+      id: 'RES-SOON0002',
+      vehicleId: 'veh-1',
+      customerName: 'Rider 2',
+      customerEmail: 'r2@rydio.mk',
+      pickupStationId: 'st-plostad',
+      startTime: '2026-11-26T20:00:00Z',
+      endTime: '2026-11-26T22:00:00Z',
+      status: 'Reserved',
+      basePriceMkd: 360,
+      discountAppliedMkd: 0,
+      latePenaltyMkd: 0,
+      totalPriceMkd: 360,
+      createdAt: '2026-11-26T17:30:00Z',
+    },
+  ];
+
+  const overlaps = getOverlappingReservations(
+    sampleVehicle,
+    bookings,
+    '2026-11-26T19:00:00Z',
+    '2026-11-26T21:00:00Z',
+    now
+  );
+  assert.equal(overlaps.length, 1);
+  assert.equal(overlaps[0].id, 'RES-SOON0002');
+  assert.match(formatReservationRange(overlaps[0].startTime, overlaps[0].endTime), /→/);
+
+  const upcoming = getUpcomingVehicleReservations(sampleVehicle, bookings, now);
+  assert.deepEqual(
+    upcoming.map((r) => r.id),
+    ['RES-SOON0002', 'RES-LATE0001']
+  );
+
+  const suggested = suggestWindowAfterReservation(overlaps[0].endTime, 2, now);
+  assert.equal(new Date(suggested.startLocal) > new Date(overlaps[0].endTime), true);
 });

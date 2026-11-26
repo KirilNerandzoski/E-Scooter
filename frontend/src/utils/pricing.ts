@@ -83,6 +83,92 @@ export function formatWindowDuration(startValue: string, endValue: string): stri
 }
 
 /**
+ * Returns all Reserved or Active reservations on a vehicle that overlap [startIso, endIso),
+ * sorted chronologically by startTime.
+ */
+export function getOverlappingReservations(
+  vehicle: Vehicle,
+  reservations: Reservation[],
+  startIso: string | null,
+  endIso: string | null,
+  now: Date = new Date()
+): Reservation[] {
+  if (!startIso || !endIso) return [];
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    return [];
+  }
+
+  const nowMs = now.getTime();
+  return reservations
+    .filter((res) => {
+      if (!res.vehicleId || res.vehicleId !== vehicle.id) return false;
+      if (res.status === 'Cancelled' || res.status === 'Completed') return false;
+      const resStartMs = new Date(res.startTime).getTime();
+      const resEndMs = new Date(res.endTime).getTime();
+      if (res.status === 'Active') {
+        const effectiveStart = new Date(Math.min(resStartMs, nowMs));
+        const effectiveEnd = new Date(Math.max(resEndMs, nowMs + 60 * 60 * 1000));
+        return rangesOverlap(start, end, effectiveStart, effectiveEnd);
+      }
+      return rangesOverlap(start, end, new Date(resStartMs), new Date(resEndMs));
+    })
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+}
+
+/**
+ * Returns all current (Active) or future (endTime > now) Reserved bookings on a vehicle,
+ * sorted chronologically by startTime.
+ */
+export function getUpcomingVehicleReservations(
+  vehicle: Vehicle,
+  reservations: Reservation[],
+  now: Date = new Date()
+): Reservation[] {
+  const nowMs = now.getTime();
+  return reservations
+    .filter((res) => {
+      if (!res.vehicleId || res.vehicleId !== vehicle.id) return false;
+      if (res.status === 'Cancelled' || res.status === 'Completed') return false;
+      if (res.status === 'Active') return true;
+      return new Date(res.endTime).getTime() > nowMs;
+    })
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+}
+
+/**
+ * Formats a reservation start -> return window cleanly (e.g. "26 Nov, 20:00 → 26 Nov, 22:00").
+ */
+export function formatReservationRange(startIso: string, endIso: string): string {
+  return `${formatShortDateTime(startIso)} → ${formatShortDateTime(endIso)}`;
+}
+
+/**
+ * Suggests a clean 2-hour local datetime-local window starting 15 minutes after a reservation ends.
+ */
+export function suggestWindowAfterReservation(
+  conflictEndIso: string,
+  durationHours: number = 2,
+  now: Date = new Date()
+): { startLocal: string; endLocal: string } {
+  const baseMs = Math.max(new Date(conflictEndIso).getTime(), now.getTime()) + 15 * 60 * 1000;
+  const start = new Date(baseMs);
+  const rem = start.getMinutes() % 5;
+  if (rem !== 0) {
+    start.setMinutes(start.getMinutes() + (5 - rem), 0, 0);
+  } else {
+    start.setSeconds(0, 0);
+  }
+  const safeHours = Math.min(MAX_RENTAL_HOURS, Math.max(1, durationHours));
+  const end = new Date(start.getTime() + safeHours * 60 * 60 * 1000);
+  return {
+    startLocal: toLocalDateTimeInput(start),
+    endLocal: toLocalDateTimeInput(end),
+  };
+}
+
+/**
  * Checks if a vehicle is available (not in maintenance, valid start < end window,
  * and has no overlapping Reserved/Active reservation).
  */
@@ -100,20 +186,7 @@ export function isVehicleAvailable(
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
     return false;
   }
-
-  const nowMs = now.getTime();
-  return !reservations.some((res) => {
-    if (!res.vehicleId || res.vehicleId !== vehicle.id) return false;
-    if (res.status === 'Cancelled' || res.status === 'Completed') return false;
-    const resStartMs = new Date(res.startTime).getTime();
-    const resEndMs = new Date(res.endTime).getTime();
-    if (res.status === 'Active') {
-      const effectiveStart = new Date(Math.min(resStartMs, nowMs));
-      const effectiveEnd = new Date(Math.max(resEndMs, nowMs + 60 * 60 * 1000));
-      return rangesOverlap(start, end, effectiveStart, effectiveEnd);
-    }
-    return rangesOverlap(start, end, new Date(resStartMs), new Date(resEndMs));
-  });
+  return getOverlappingReservations(vehicle, reservations, startIso, endIso, now).length === 0;
 }
 
 /**

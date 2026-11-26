@@ -1,13 +1,24 @@
 import { useMemo, useState } from 'react';
-import { X, AlertCircle, CheckCircle2, BatteryCharging, MapPin, ArrowRight } from 'lucide-react';
+import {
+  X,
+  AlertCircle,
+  CheckCircle2,
+  BatteryCharging,
+  MapPin,
+  ArrowRight,
+  Clock,
+} from 'lucide-react';
 import type { Reservation, Station, UserAccount, Vehicle, VehicleType } from '../types/rydio';
 import {
   calculateReservationPrice,
   formatMkd,
+  formatReservationRange,
   getMaxEndDateTimeLocal,
   getMinStartDateTimeLocal,
-  isVehicleAvailable,
+  getOverlappingReservations,
+  getUpcomingVehicleReservations,
   MAX_RENTAL_DAYS,
+  suggestWindowAfterReservation,
   toLocalDateTimeInput,
   toSafeIso,
 } from '../utils/pricing';
@@ -78,9 +89,14 @@ export function ReservationModal({
     [vehicle, startTime, endTime, nowRef, vehicleType?.fullDayDiscountPercent]
   );
 
-  const hasConflict = useMemo(() => {
-    if (!price.valid) return false;
-    return !isVehicleAvailable(
+  const upcomingBookings = useMemo(
+    () => getUpcomingVehicleReservations(vehicle, reservations, nowRef),
+    [vehicle, reservations, nowRef]
+  );
+
+  const conflictingBookings = useMemo(() => {
+    if (!price.valid) return [];
+    return getOverlappingReservations(
       vehicle,
       reservations,
       toSafeIso(startTime),
@@ -88,6 +104,8 @@ export function ReservationModal({
       nowRef
     );
   }, [vehicle, reservations, startTime, endTime, price.valid, nowRef]);
+
+  const hasConflict = conflictingBookings.length > 0;
 
   const canSubmit =
     price.valid && !hasConflict && !vehicle.inMaintenance && Boolean(currentUser) && !submitting;
@@ -206,6 +224,42 @@ export function ReservationModal({
           </div>
         )}
 
+        {/* Existing Reserved Windows on This Vehicle */}
+        {upcomingBookings.length > 0 && (
+          <div className="rounded-md border border-status-warn-border bg-status-warn-bg px-3.5 py-3 text-xs text-status-warn-text">
+            <p className="flex items-center gap-1.5 font-semibold tracking-[0.08em]">
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              RESERVED WINDOWS ON THIS VEHICLE
+            </p>
+            <ul className="mt-1.5 space-y-1.5">
+              {upcomingBookings.slice(0, 4).map((b) => (
+                <li
+                  key={b.id}
+                  className="flex flex-wrap items-center justify-between gap-2 tabular-nums"
+                >
+                  <span>
+                    {b.status === 'Active' ? 'Active ride: ' : 'Reserved: '}
+                    <strong>{formatReservationRange(b.startTime, b.endTime)}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const freshNow = new Date();
+                      setNowRef(freshNow);
+                      const next = suggestWindowAfterReservation(b.endTime, 2, freshNow);
+                      setStartTime(next.startLocal);
+                      setEndTime(next.endLocal);
+                    }}
+                    className="rounded border border-status-warn-text/30 bg-surface-pure px-2 py-0.5 text-[11px] font-medium text-status-warn-text transition-colors hover:bg-status-warn-text hover:text-surface-pure"
+                  >
+                    Book after return
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Quick Duration Presets */}
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <span className="w-full text-[11px] font-medium tracking-[0.12em] text-dilute-ink sm:w-auto">
@@ -280,7 +334,7 @@ export function ReservationModal({
             <span>
               {!price.valid
                 ? price.error
-                : 'This vehicle already has an overlapping reservation during the selected window. Choose a different time slot.'}
+                : `Reserved between ${formatReservationRange(conflictingBookings[0].startTime, conflictingBookings[0].endTime)}. Choose a start/return window outside that period.`}
             </span>
           </div>
         )}

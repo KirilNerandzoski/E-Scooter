@@ -1,13 +1,24 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowRight, BatteryCharging, MapPin, ChevronRight, AlertCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  BatteryCharging,
+  MapPin,
+  ChevronRight,
+  AlertCircle,
+  Clock,
+} from 'lucide-react';
 import type { Reservation, Station, Vehicle, VehicleType } from '../types/rydio';
 import {
   calculateReservationPrice,
   formatMkd,
+  formatReservationRange,
   formatWindowDuration,
   getMaxEndDateTimeLocal,
   getMinStartDateTimeLocal,
+  getOverlappingReservations,
+  getUpcomingVehicleReservations,
   isVehicleAvailable,
+  suggestWindowAfterReservation,
   toLocalDateTimeInput,
   toSafeIso,
   validateFilterWindow,
@@ -32,7 +43,10 @@ interface HomePageProps {
   onFindRides: () => void;
   onViewStations: () => void;
   onResetFilters: () => void;
-  onSelectVehicle: (vehicle: Vehicle) => void;
+  onSelectVehicle: (
+    vehicle: Vehicle,
+    overrideWindow?: { start: string; end: string }
+  ) => void;
 }
 
 const DURATION_PRESETS = [
@@ -83,15 +97,20 @@ export function HomePage({
       : null;
   const windowLabel = formatWindowDuration(filterStart, filterEnd);
 
-  const availableVehicles = vehicles.filter((v) => {
+  const matchingVehicles = vehicles.filter((v) => {
     if (v.inMaintenance) return false;
     if (filterTypeId && v.typeId !== filterTypeId) return false;
     if (filterStationId && v.stationId !== filterStationId) return false;
-    if (windowInvalid) return false;
-    return isVehicleAvailable(v, reservations, startIso, endIso, nowRef);
+    return true;
   });
 
-  const featuredList = [...availableVehicles]
+  const availableVehicles = windowInvalid
+    ? []
+    : matchingVehicles.filter((v) =>
+        isVehicleAvailable(v, reservations, startIso, endIso, nowRef)
+      );
+
+  const featuredList = [...matchingVehicles]
     .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
     .slice(0, 4);
 
@@ -295,20 +314,20 @@ export function HomePage({
             <span className="tabular-nums text-xs text-dilute-ink sm:ml-auto">
               {windowInvalid
                 ? 'Choose a valid time window'
-                : `${availableVehicles.length} ${availableVehicles.length === 1 ? 'vehicle' : 'vehicles'} free for this window`}
+                : `${availableVehicles.length} of ${matchingVehicles.length} ${matchingVehicles.length === 1 ? 'vehicle' : 'vehicles'} free for this window`}
             </span>
           </div>
         </form>
 
         {/* Lower 4-Card Strip (semantic <article> cards with hairline vehicle silhouettes) */}
-        <section aria-label="Available rides for your selected window" className="mt-8 sm:mt-10">
+        <section aria-label="Fleet rides for your selected window" className="mt-8 sm:mt-10">
           {featuredList.length === 0 ? (
             <div className="rounded-lg border border-mist bg-white p-8 text-center sm:p-10">
               <p className="font-display text-xl text-indigo-depth">
-                No free vehicles match this exact filter.
+                No vehicles match this station or type filter.
               </p>
               <p className="mt-2 text-sm text-dilute-ink">
-                Try widening your station selection or adjusting your pickup window.
+                Try widening your station selection or resetting your filters.
               </p>
               <button
                 type="button"
@@ -325,6 +344,17 @@ export function HomePage({
                 const vType = getType(vehicle.typeId);
                 const typeName = vType?.name ?? 'Electric';
                 const silhouetteKind = resolveVehicleSilhouetteKind(vehicle.name, typeName);
+                const conflicts = !windowInvalid
+                  ? getOverlappingReservations(vehicle, reservations, startIso, endIso, nowRef)
+                  : [];
+                const isReservedForWindow = conflicts.length > 0;
+                const isOutOnRide = conflicts.some((r) => r.status === 'Active');
+                const upcomingBookings = getUpcomingVehicleReservations(
+                  vehicle,
+                  reservations,
+                  nowRef
+                );
+                const nextOtherBooking = !isReservedForWindow ? upcomingBookings[0] : undefined;
                 const est = !windowInvalid
                   ? calculateReservationPrice(
                       vehicle,
@@ -341,18 +371,27 @@ export function HomePage({
                     className={`flex min-h-[264px] flex-col justify-between rounded-lg p-4 transition-all duration-200 sm:p-5 ${
                       isLead
                         ? 'indigo-basin-card border border-indigo-depth text-paper-white shadow-[0_12px_30px_rgba(10,26,51,0.18)] hover:-translate-y-0.5'
-                        : 'border border-mist bg-white text-indigo-depth hover:-translate-y-0.5 hover:border-indigo-depth/50 hover:shadow-[0_10px_24px_rgba(10,26,51,0.06)]'
+                        : isReservedForWindow
+                          ? 'border border-status-warn-border bg-surface-pure text-indigo-depth'
+                          : 'border border-mist bg-white text-indigo-depth hover:-translate-y-0.5 hover:border-indigo-depth/50 hover:shadow-[0_10px_24px_rgba(10,26,51,0.06)]'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={`truncate text-[10px] font-semibold tracking-[0.12em] ${
-                            isLead ? 'text-basin-tint' : 'text-dilute-ink'
-                          }`}
-                        >
-                          {isLead ? 'FEATURED' : typeName.toUpperCase()}
-                        </span>
+                        {!windowInvalid && isReservedForWindow ? (
+                          <span className="inline-flex items-center gap-1 rounded border border-status-warn-border bg-status-warn-bg px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-status-warn-text">
+                            <Clock className="h-3 w-3 shrink-0" />
+                            {isOutOnRide ? 'ACTIVE RIDE' : 'RESERVED'}
+                          </span>
+                        ) : (
+                          <span
+                            className={`truncate text-[10px] font-semibold tracking-[0.12em] ${
+                              isLead ? 'text-basin-tint' : 'text-dilute-ink'
+                            }`}
+                          >
+                            {isLead ? 'FEATURED' : typeName.toUpperCase()}
+                          </span>
+                        )}
                         <span
                           className={`tabular-nums inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${
                             isLead ? 'text-basin-soft' : 'text-dilute-ink'
@@ -387,6 +426,32 @@ export function HomePage({
                         <MapPin className="h-3.5 w-3.5 shrink-0" strokeWidth={1.6} />
                         <span className="truncate">{getStationName(vehicle.stationId)}</span>
                       </p>
+
+                      {isReservedForWindow && (
+                        <div className="mt-2 rounded border border-status-warn-border bg-status-warn-bg px-2 py-1 text-[11px] leading-snug font-medium text-status-warn-text tabular-nums">
+                          Reserved:{' '}
+                          <strong>
+                            {formatReservationRange(
+                              conflicts[0].startTime,
+                              conflicts[0].endTime
+                            )}
+                          </strong>
+                        </div>
+                      )}
+
+                      {!isReservedForWindow && nextOtherBooking && (
+                        <p
+                          className={`mt-1.5 text-[11px] leading-snug tabular-nums ${
+                            isLead ? 'text-basin-soft' : 'text-dilute-ink'
+                          }`}
+                        >
+                          Reserved later:{' '}
+                          {formatReservationRange(
+                            nextOtherBooking.startTime,
+                            nextOtherBooking.endTime
+                          )}
+                        </p>
+                      )}
                     </div>
 
                     <div
@@ -413,7 +478,7 @@ export function HomePage({
                         >
                           Day cap {formatMkd(vehicle.fullDayRateMkd)}
                         </p>
-                        {est?.valid && (
+                        {est?.valid && !isReservedForWindow && (
                           <p
                             className={`tabular-nums whitespace-nowrap pt-0.5 text-[11px] font-medium ${
                               isLead ? 'text-basin-soft' : 'text-indigo-depth'
@@ -425,25 +490,64 @@ export function HomePage({
                       </div>
 
                       <div className="mt-3 flex items-center justify-between gap-2">
-                        <span
-                          className={`tabular-nums whitespace-nowrap text-[11px] ${
-                            isLead ? 'text-basin-tint' : 'text-dilute-ink'
-                          }`}
-                        >
-                          {vehicle.rangeKm} km range
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onSelectVehicle(vehicle)}
-                          className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                            isLead
-                              ? 'bg-white/10 text-white hover:bg-white/20'
-                              : 'bg-paper-white text-indigo-depth hover:bg-mist'
-                          }`}
-                        >
-                          Reserve
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </button>
+                        {isReservedForWindow ? (
+                          <>
+                            <span
+                              className={`tabular-nums whitespace-nowrap text-[11px] font-medium ${
+                                isLead ? 'text-basin-soft' : 'text-status-warn-text'
+                              }`}
+                            >
+                              Slot booked
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const lastConflict = conflicts[conflicts.length - 1];
+                                const nextWin = suggestWindowAfterReservation(
+                                  lastConflict.endTime,
+                                  activeDurationHours && activeDurationHours <= 24
+                                    ? activeDurationHours
+                                    : 2,
+                                  new Date()
+                                );
+                                onSelectVehicle(vehicle, {
+                                  start: nextWin.startLocal,
+                                  end: nextWin.endLocal,
+                                });
+                              }}
+                              className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                                isLead
+                                  ? 'bg-white/15 text-white hover:bg-white/25'
+                                  : 'border border-mist bg-paper-white text-indigo-depth hover:border-indigo-depth'
+                              }`}
+                            >
+                              Other time
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span
+                              className={`tabular-nums whitespace-nowrap text-[11px] ${
+                                isLead ? 'text-basin-tint' : 'text-dilute-ink'
+                              }`}
+                            >
+                              {vehicle.rangeKm} km range
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onSelectVehicle(vehicle)}
+                              className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                                isLead
+                                  ? 'bg-white/10 text-white hover:bg-white/20'
+                                  : 'bg-paper-white text-indigo-depth hover:bg-mist'
+                              }`}
+                            >
+                              Reserve
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </article>
@@ -452,14 +556,14 @@ export function HomePage({
             </div>
           )}
 
-          {availableVehicles.length > 4 && (
+          {matchingVehicles.length > 4 && (
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
                 onClick={onFindRides}
                 className="inline-flex min-h-[38px] items-center gap-1.5 text-xs font-medium tracking-[0.12em] text-indigo-depth hover:underline"
               >
-                VIEW ALL {availableVehicles.length} FREE VEHICLES
+                VIEW ALL {matchingVehicles.length} FLEET VEHICLES ({availableVehicles.length} FREE)
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>

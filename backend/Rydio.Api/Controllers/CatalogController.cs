@@ -44,6 +44,7 @@ public class CatalogController(RydioDbContext db) : ControllerBase
             .Where(r => r.VehicleId != null && (r.Status == "Reserved" || r.Status == "Active"))
             .Select(r => new { VehicleId = r.VehicleId!, r.StartTime, r.EndTime, r.Status })
             .ToListAsync();
+        busyWindows = busyWindows.OrderBy(r => r.StartTime).ToList();
 
         object? currentUser = null;
         var reservations = new List<Models.Reservation>();
@@ -126,14 +127,22 @@ public class CatalogController(RydioDbContext db) : ControllerBase
         [FromQuery] string? stationId,
         [FromQuery] DateTimeOffset? start,
         [FromQuery] DateTimeOffset? end,
+        [FromQuery] bool availableOnly = false,
         [FromQuery] string sort = "asc",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 6)
     {
-        var query = db.Vehicles.Where(v => !v.InMaintenance);
+        var query = db.Vehicles.AsNoTracking().Where(v => !v.InMaintenance);
         if (!string.IsNullOrWhiteSpace(typeId)) query = query.Where(v => v.TypeId == typeId);
         if (!string.IsNullOrWhiteSpace(stationId)) query = query.Where(v => v.StationId == stationId);
 
+        var candidates = await db.Reservations
+            .AsNoTracking()
+            .Where(r => r.VehicleId != null && (r.Status == "Reserved" || r.Status == "Active"))
+            .Select(r => new { VehicleId = r.VehicleId!, r.Status, r.StartTime, r.EndTime })
+            .ToListAsync();
+
+        var busyByVehicle = new Dictionary<string, List<object>>();
         if (start.HasValue && end.HasValue && end > start)
         {
             var s = start.Value.ToUniversalTime();
@@ -141,13 +150,7 @@ public class CatalogController(RydioDbContext db) : ControllerBase
             var now = DateTimeOffset.UtcNow;
             var activeGraceEnd = now.AddHours(1);
 
-            var candidates = await db.Reservations
-                .AsNoTracking()
-                .Where(r => r.VehicleId != null && (r.Status == "Reserved" || r.Status == "Active"))
-                .Select(r => new { VehicleId = r.VehicleId!, r.Status, r.StartTime, r.EndTime })
-                .ToListAsync();
-
-            var busyIds = candidates
+            var overlapping = candidates
                 .Where(r =>
                 {
                     if (r.Status == "Active")
@@ -158,11 +161,24 @@ public class CatalogController(RydioDbContext db) : ControllerBase
                     }
                     return s < r.EndTime && r.StartTime < e;
                 })
-                .Select(r => r.VehicleId)
-                .Distinct()
+                .OrderBy(r => r.StartTime)
                 .ToList();
 
-            query = query.Where(v => !busyIds.Contains(v.Id));
+            foreach (var r in overlapping)
+            {
+                if (!busyByVehicle.TryGetValue(r.VehicleId, out var list))
+                {
+                    list = [];
+                    busyByVehicle[r.VehicleId] = list;
+                }
+                list.Add(new { r.StartTime, r.EndTime, r.Status });
+            }
+
+            if (availableOnly && busyByVehicle.Count > 0)
+            {
+                var busyIds = busyByVehicle.Keys.ToList();
+                query = query.Where(v => !busyIds.Contains(v.Id));
+            }
         }
 
         query = sort.Equals("desc", StringComparison.OrdinalIgnoreCase)
@@ -170,10 +186,32 @@ public class CatalogController(RydioDbContext db) : ControllerBase
             : query.OrderBy(v => v.HourlyRateMkd);
 
         var total = await query.CountAsync();
-        var items = await query
+        var rawItems = await query
             .Skip((Math.Max(1, page) - 1) * Math.Clamp(pageSize, 1, 50))
             .Take(Math.Clamp(pageSize, 1, 50))
             .ToListAsync();
+
+        var items = rawItems.Select(v =>
+        {
+            var windows = busyByVehicle.TryGetValue(v.Id, out var list) ? list : [];
+            return new
+            {
+                v.Id,
+                v.Code,
+                v.Name,
+                v.TypeId,
+                v.StationId,
+                v.HourlyRateMkd,
+                v.FullDayRateMkd,
+                v.BatteryPercent,
+                v.RangeKm,
+                v.MaxSpeedKmh,
+                v.InMaintenance,
+                v.Featured,
+                IsReserved = windows.Count > 0,
+                ReservedWindows = windows
+            };
+        }).ToList();
 
         return Ok(new { total, page, pageSize, items });
     }

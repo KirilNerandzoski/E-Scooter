@@ -178,7 +178,14 @@ export function App() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
-  const pendingBookingVehicleRef = useRef<Vehicle | null>(null);
+  const [bookingWindowOverride, setBookingWindowOverride] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
+  const pendingBookingVehicleRef = useRef<{
+    vehicle: Vehicle;
+    override: { start: string; end: string } | null;
+  } | null>(null);
   const [returningReservation, setReturningReservation] = useState<Reservation | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -366,11 +373,20 @@ export function App() {
     }));
   }, [apiLive, reservations, busyWindows]);
 
+  const openBookingModal = useCallback(
+    (vehicle: Vehicle, overrideWindow?: { start: string; end: string }) => {
+      setBookingWindowOverride(overrideWindow ?? null);
+      setBookingVehicle(vehicle);
+    },
+    []
+  );
+
   const restorePendingBooking = useCallback(() => {
     const pending = pendingBookingVehicleRef.current;
     if (pending) {
       pendingBookingVehicleRef.current = null;
-      setBookingVehicle(pending);
+      setBookingWindowOverride(pending.override);
+      setBookingVehicle(pending.vehicle);
     }
   }, []);
 
@@ -495,6 +511,7 @@ export function App() {
         await syncFromApi();
         setFilterStart(toLocalDateTimeInput(new Date(payload.startTime)));
         setFilterEnd(toLocalDateTimeInput(new Date(payload.endTime)));
+        setBookingWindowOverride(null);
         setBookingVehicle(null);
         setActiveTab('my-rides');
         showToast(`Reserved ${vehicle.name} (${created.id}).`);
@@ -533,6 +550,7 @@ export function App() {
     setReservations((prev) => [newRes, ...prev]);
     setFilterStart(toLocalDateTimeInput(new Date(payload.startTime)));
     setFilterEnd(toLocalDateTimeInput(new Date(payload.endTime)));
+    setBookingWindowOverride(null);
     setBookingVehicle(null);
     setActiveTab('my-rides');
     showToast(`Reserved ${vehicle.name} (${newRes.id}).`);
@@ -1275,7 +1293,7 @@ export function App() {
             onFindRides={() => setActiveTab('catalog')}
             onViewStations={() => setActiveTab('stations')}
             onResetFilters={handleResetFiltersAndWindow}
-            onSelectVehicle={(v) => setBookingVehicle(v)}
+            onSelectVehicle={openBookingModal}
           />
         )}
 
@@ -1294,7 +1312,7 @@ export function App() {
             onChangeStart={setFilterStart}
             onChangeEnd={setFilterEnd}
             onResetFilters={handleResetFiltersAndWindow}
-            onSelectVehicle={(v) => setBookingVehicle(v)}
+            onSelectVehicle={openBookingModal}
           />
         )}
 
@@ -1429,17 +1447,23 @@ export function App() {
           vehicle={bookingVehicle}
           vehicleType={vehicleTypes.find((t) => t.id === bookingVehicle.typeId)}
           station={stations.find((s) => s.id === bookingVehicle.stationId)}
-          initialStart={filterStart}
-          initialEnd={filterEnd}
+          initialStart={bookingWindowOverride?.start ?? filterStart}
+          initialEnd={bookingWindowOverride?.end ?? filterEnd}
           reservations={availabilityReservations}
           currentUser={currentUser}
           onRequireAuth={(mode) => {
-            pendingBookingVehicleRef.current = bookingVehicle;
+            pendingBookingVehicleRef.current = {
+              vehicle: bookingVehicle,
+              override: bookingWindowOverride,
+            };
             setBookingVehicle(null);
             setAuthModalMode(mode);
           }}
           onConfirm={handleConfirmReservation}
-          onClose={() => setBookingVehicle(null)}
+          onClose={() => {
+            setBookingWindowOverride(null);
+            setBookingVehicle(null);
+          }}
         />
       )}
 
