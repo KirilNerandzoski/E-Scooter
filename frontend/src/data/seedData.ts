@@ -12,7 +12,7 @@ export const INITIAL_USERS: UserAccount[] = [
     id: 'usr-superadmin',
     name: 'Rydio SuperAdmin',
     email: 'superadmin@rydio.mk',
-    password: 'SuperAdmin123!',
+    password: '',
     role: 'SuperAdmin',
     active: true,
     createdAt: '2026-06-01T09:00:00.000Z',

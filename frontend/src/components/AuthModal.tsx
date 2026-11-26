@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { X, AlertCircle, ShieldCheck, ArrowRight } from 'lucide-react';
+import { X, AlertCircle, ArrowRight } from 'lucide-react';
 import type { UserAccount } from '../types/rydio';
 import { Modal } from './Modal';
 import { loginWithApi, registerWithApi } from '../services/rydioApi';
@@ -140,13 +140,6 @@ export function AuthModal({
       createdAt: new Date().toISOString(),
     };
     onLocalRegisterSuccess(newUser);
-  };
-
-  const fillSuperAdmin = () => {
-    setMode('login');
-    setEmail('superadmin@rydio.mk');
-    setPassword('SuperAdmin123!');
-    setError(null);
   };
 
   return (
@@ -330,25 +323,6 @@ export function AuthModal({
               : 'CREATE ACCOUNT'}
           <ArrowRight className="h-3.5 w-3.5" />
         </button>
-
-        <details className="border-t border-[#DDE2E8] pt-3 text-[11px] text-[#515F73]">
-          <summary className="cursor-pointer py-1 font-medium tracking-[0.08em] text-[#515F73] hover:text-[#0A1A33]">
-            Evaluation access (SuperAdmin)
-          </summary>
-          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-md border border-[#DDE2E8] bg-white px-3 py-2.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-[#0A1A33]" />
-              <strong className="truncate text-[#0A1A33]">superadmin@rydio.mk</strong>
-            </div>
-            <button
-              type="button"
-              onClick={fillSuperAdmin}
-              className="min-h-[34px] shrink-0 rounded border border-[#0A1A33]/30 px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white"
-            >
-              FILL
-            </button>
-          </div>
-        </details>
       </form>
     </Modal>
   );
