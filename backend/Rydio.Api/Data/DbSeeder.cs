@@ -37,21 +37,84 @@ public static class DbSeeder
             await db.SaveChangesAsync();
         }
 
-        if (!await db.Vehicles.AnyAsync())
+        // Canonical 36-product Skopje fleet (6 products per station across all 6 stations) + 1 maintenance sample
+        var canonicalFleet = new Vehicle[]
         {
-            db.Vehicles.AddRange(
-                new Vehicle { Id = "veh-s1-pro", Code = "RYD-S01", Name = "Rydio S1 Pro", TypeId = "vt-scooter", StationId = "st-plostad", HourlyRateMkd = 180, FullDayRateMkd = 950, BatteryPercent = 96, RangeKm = 48, MaxSpeedKmh = 25, InMaintenance = false, Featured = true },
-                new Vehicle { Id = "veh-city-ebike", Code = "RYD-B01", Name = "Rydio City E-Bike", TypeId = "vt-ebike", StationId = "st-park", HourlyRateMkd = 220, FullDayRateMkd = 1200, BatteryPercent = 92, RangeKm = 65, MaxSpeedKmh = 25, InMaintenance = false },
-                new Vehicle { Id = "veh-lite-01", Code = "RYD-S02", Name = "Rydio Lite Scooter", TypeId = "vt-scooter", StationId = "st-debar", HourlyRateMkd = 150, FullDayRateMkd = 800, BatteryPercent = 89, RangeKm = 35, MaxSpeedKmh = 22, InMaintenance = false },
-                new Vehicle { Id = "veh-cargo-ebike", Code = "RYD-B02", Name = "Rydio Cargo E-Bike", TypeId = "vt-ebike", StationId = "st-eastgate", HourlyRateMkd = 260, FullDayRateMkd = 1450, BatteryPercent = 84, RangeKm = 58, MaxSpeedKmh = 25, InMaintenance = false },
-                new Vehicle { Id = "veh-s1-air", Code = "RYD-S03", Name = "Rydio S1 Air", TypeId = "vt-scooter", StationId = "st-plostad", HourlyRateMkd = 160, FullDayRateMkd = 850, BatteryPercent = 91, RangeKm = 40, MaxSpeedKmh = 25, InMaintenance = false },
-                new Vehicle { Id = "veh-tourer-ebike", Code = "RYD-B03", Name = "Rydio Vardar Tourer", TypeId = "vt-ebike", StationId = "st-karpos", HourlyRateMkd = 240, FullDayRateMkd = 1320, BatteryPercent = 95, RangeKm = 72, MaxSpeedKmh = 25, InMaintenance = false },
-                new Vehicle { Id = "veh-commuter-s04", Code = "RYD-S04", Name = "Rydio Metro Glide", TypeId = "vt-scooter", StationId = "st-aerodrom", HourlyRateMkd = 170, FullDayRateMkd = 900, BatteryPercent = 78, RangeKm = 42, MaxSpeedKmh = 25, InMaintenance = false },
-                new Vehicle { Id = "veh-step-ebike", Code = "RYD-B04", Name = "Rydio Step-Through", TypeId = "vt-ebike", StationId = "st-plostad", HourlyRateMkd = 210, FullDayRateMkd = 1150, BatteryPercent = 87, RangeKm = 60, MaxSpeedKmh = 25, InMaintenance = false },
-                new Vehicle { Id = "veh-s1-service", Code = "RYD-S05", Name = "Rydio S1 Pro #05", TypeId = "vt-scooter", StationId = "st-park", HourlyRateMkd = 180, FullDayRateMkd = 950, BatteryPercent = 42, RangeKm = 48, MaxSpeedKmh = 25, InMaintenance = true }
-            );
+            // 1. Plostad Makedonija (st-plostad) — 6 products (3 E-Scooters, 3 E-Bikes)
+            new() { Id = "veh-s1-pro", Code = "RYD-S01", Name = "Rydio S1 Pro", TypeId = "vt-scooter", StationId = "st-plostad", HourlyRateMkd = 180, FullDayRateMkd = 950, BatteryPercent = 96, RangeKm = 48, MaxSpeedKmh = 25, InMaintenance = false, Featured = true },
+            new() { Id = "veh-s1-air", Code = "RYD-S03", Name = "Rydio S1 Air", TypeId = "vt-scooter", StationId = "st-plostad", HourlyRateMkd = 160, FullDayRateMkd = 850, BatteryPercent = 91, RangeKm = 40, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-plostad-glide", Code = "RYD-S06", Name = "Rydio Metro Glide", TypeId = "vt-scooter", StationId = "st-plostad", HourlyRateMkd = 170, FullDayRateMkd = 900, BatteryPercent = 94, RangeKm = 42, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-step-ebike", Code = "RYD-B04", Name = "Rydio Step-Through", TypeId = "vt-ebike", StationId = "st-plostad", HourlyRateMkd = 210, FullDayRateMkd = 1150, BatteryPercent = 87, RangeKm = 60, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-plostad-city", Code = "RYD-B05", Name = "Rydio City E-Bike", TypeId = "vt-ebike", StationId = "st-plostad", HourlyRateMkd = 220, FullDayRateMkd = 1200, BatteryPercent = 95, RangeKm = 65, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-plostad-cargo", Code = "RYD-B06", Name = "Rydio Cargo E-Bike", TypeId = "vt-ebike", StationId = "st-plostad", HourlyRateMkd = 260, FullDayRateMkd = 1450, BatteryPercent = 90, RangeKm = 58, MaxSpeedKmh = 25, InMaintenance = false },
+
+            // 2. Gradski Park (st-park) — 6 products (3 E-Scooters, 3 E-Bikes)
+            new() { Id = "veh-park-lite", Code = "RYD-S07", Name = "Rydio Lite Scooter", TypeId = "vt-scooter", StationId = "st-park", HourlyRateMkd = 150, FullDayRateMkd = 800, BatteryPercent = 93, RangeKm = 35, MaxSpeedKmh = 22, InMaintenance = false },
+            new() { Id = "veh-park-pulse", Code = "RYD-S08", Name = "Rydio Vardar Pulse", TypeId = "vt-scooter", StationId = "st-park", HourlyRateMkd = 195, FullDayRateMkd = 1050, BatteryPercent = 97, RangeKm = 55, MaxSpeedKmh = 25, InMaintenance = false, Featured = true },
+            new() { Id = "veh-park-apex", Code = "RYD-S09", Name = "Rydio Vodno Apex", TypeId = "vt-scooter", StationId = "st-park", HourlyRateMkd = 205, FullDayRateMkd = 1100, BatteryPercent = 92, RangeKm = 58, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-city-ebike", Code = "RYD-B01", Name = "Rydio City E-Bike", TypeId = "vt-ebike", StationId = "st-park", HourlyRateMkd = 220, FullDayRateMkd = 1200, BatteryPercent = 92, RangeKm = 65, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-park-tourer", Code = "RYD-B07", Name = "Rydio Vardar Tourer", TypeId = "vt-ebike", StationId = "st-park", HourlyRateMkd = 240, FullDayRateMkd = 1320, BatteryPercent = 94, RangeKm = 72, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-park-trekker", Code = "RYD-B08", Name = "Rydio Kale Trekker", TypeId = "vt-ebike", StationId = "st-park", HourlyRateMkd = 250, FullDayRateMkd = 1380, BatteryPercent = 89, RangeKm = 75, MaxSpeedKmh = 25, InMaintenance = false },
+
+            // 3. Debar Maalo (st-debar) — 6 products (3 E-Scooters, 3 E-Bikes)
+            new() { Id = "veh-lite-01", Code = "RYD-S02", Name = "Rydio Lite Scooter", TypeId = "vt-scooter", StationId = "st-debar", HourlyRateMkd = 150, FullDayRateMkd = 800, BatteryPercent = 89, RangeKm = 35, MaxSpeedKmh = 22, InMaintenance = false },
+            new() { Id = "veh-debar-air", Code = "RYD-S10", Name = "Rydio S1 Air", TypeId = "vt-scooter", StationId = "st-debar", HourlyRateMkd = 160, FullDayRateMkd = 850, BatteryPercent = 95, RangeKm = 40, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-debar-pulse", Code = "RYD-S11", Name = "Rydio Vardar Pulse", TypeId = "vt-scooter", StationId = "st-debar", HourlyRateMkd = 195, FullDayRateMkd = 1050, BatteryPercent = 88, RangeKm = 55, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-debar-step", Code = "RYD-B09", Name = "Rydio Step-Through", TypeId = "vt-ebike", StationId = "st-debar", HourlyRateMkd = 210, FullDayRateMkd = 1150, BatteryPercent = 93, RangeKm = 60, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-debar-cruiser", Code = "RYD-B10", Name = "Rydio Boemska Cruiser", TypeId = "vt-ebike", StationId = "st-debar", HourlyRateMkd = 215, FullDayRateMkd = 1180, BatteryPercent = 96, RangeKm = 62, MaxSpeedKmh = 25, InMaintenance = false, Featured = true },
+            new() { Id = "veh-debar-commuter", Code = "RYD-B11", Name = "Rydio Capitol Commuter", TypeId = "vt-ebike", StationId = "st-debar", HourlyRateMkd = 230, FullDayRateMkd = 1260, BatteryPercent = 91, RangeKm = 68, MaxSpeedKmh = 25, InMaintenance = false },
+
+            // 4. East Gate (st-eastgate) — 6 products (3 E-Scooters, 3 E-Bikes)
+            new() { Id = "veh-east-air", Code = "RYD-S12", Name = "Rydio S1 Air", TypeId = "vt-scooter", StationId = "st-eastgate", HourlyRateMkd = 160, FullDayRateMkd = 850, BatteryPercent = 92, RangeKm = 40, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-east-glide", Code = "RYD-S13", Name = "Rydio Metro Glide", TypeId = "vt-scooter", StationId = "st-eastgate", HourlyRateMkd = 170, FullDayRateMkd = 900, BatteryPercent = 90, RangeKm = 42, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-east-apex", Code = "RYD-S14", Name = "Rydio Vodno Apex", TypeId = "vt-scooter", StationId = "st-eastgate", HourlyRateMkd = 205, FullDayRateMkd = 1100, BatteryPercent = 95, RangeKm = 58, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-cargo-ebike", Code = "RYD-B02", Name = "Rydio Cargo E-Bike", TypeId = "vt-ebike", StationId = "st-eastgate", HourlyRateMkd = 260, FullDayRateMkd = 1450, BatteryPercent = 84, RangeKm = 58, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-east-step", Code = "RYD-B12", Name = "Rydio Step-Through", TypeId = "vt-ebike", StationId = "st-eastgate", HourlyRateMkd = 210, FullDayRateMkd = 1150, BatteryPercent = 94, RangeKm = 60, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-east-trekker", Code = "RYD-B13", Name = "Rydio Kale Trekker", TypeId = "vt-ebike", StationId = "st-eastgate", HourlyRateMkd = 250, FullDayRateMkd = 1380, BatteryPercent = 88, RangeKm = 75, MaxSpeedKmh = 25, InMaintenance = false },
+
+            // 5. Karpos 3 (st-karpos) — 6 products (3 E-Scooters, 3 E-Bikes)
+            new() { Id = "veh-karpos-pro", Code = "RYD-S15", Name = "Rydio S1 Pro", TypeId = "vt-scooter", StationId = "st-karpos", HourlyRateMkd = 180, FullDayRateMkd = 950, BatteryPercent = 94, RangeKm = 48, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-karpos-pulse", Code = "RYD-S16", Name = "Rydio Vardar Pulse", TypeId = "vt-scooter", StationId = "st-karpos", HourlyRateMkd = 195, FullDayRateMkd = 1050, BatteryPercent = 91, RangeKm = 55, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-karpos-apex", Code = "RYD-S17", Name = "Rydio Vodno Apex", TypeId = "vt-scooter", StationId = "st-karpos", HourlyRateMkd = 205, FullDayRateMkd = 1100, BatteryPercent = 89, RangeKm = 58, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-tourer-ebike", Code = "RYD-B03", Name = "Rydio Vardar Tourer", TypeId = "vt-ebike", StationId = "st-karpos", HourlyRateMkd = 240, FullDayRateMkd = 1320, BatteryPercent = 95, RangeKm = 72, MaxSpeedKmh = 25, InMaintenance = false, Featured = true },
+            new() { Id = "veh-karpos-trekker", Code = "RYD-B14", Name = "Rydio Kale Trekker", TypeId = "vt-ebike", StationId = "st-karpos", HourlyRateMkd = 250, FullDayRateMkd = 1380, BatteryPercent = 93, RangeKm = 75, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-karpos-cruiser", Code = "RYD-B15", Name = "Rydio Boemska Cruiser", TypeId = "vt-ebike", StationId = "st-karpos", HourlyRateMkd = 215, FullDayRateMkd = 1180, BatteryPercent = 90, RangeKm = 62, MaxSpeedKmh = 25, InMaintenance = false },
+
+            // 6. Aerodrom (st-aerodrom) — 6 products (3 E-Scooters, 3 E-Bikes)
+            new() { Id = "veh-commuter-s04", Code = "RYD-S04", Name = "Rydio Metro Glide", TypeId = "vt-scooter", StationId = "st-aerodrom", HourlyRateMkd = 170, FullDayRateMkd = 900, BatteryPercent = 78, RangeKm = 42, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-aerodrom-pro", Code = "RYD-S18", Name = "Rydio S1 Pro", TypeId = "vt-scooter", StationId = "st-aerodrom", HourlyRateMkd = 180, FullDayRateMkd = 950, BatteryPercent = 95, RangeKm = 48, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-aerodrom-lite", Code = "RYD-S19", Name = "Rydio Lite Scooter", TypeId = "vt-scooter", StationId = "st-aerodrom", HourlyRateMkd = 150, FullDayRateMkd = 800, BatteryPercent = 92, RangeKm = 35, MaxSpeedKmh = 22, InMaintenance = false },
+            new() { Id = "veh-aerodrom-city", Code = "RYD-B16", Name = "Rydio City E-Bike", TypeId = "vt-ebike", StationId = "st-aerodrom", HourlyRateMkd = 220, FullDayRateMkd = 1200, BatteryPercent = 94, RangeKm = 65, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-aerodrom-tourer", Code = "RYD-B17", Name = "Rydio Vardar Tourer", TypeId = "vt-ebike", StationId = "st-aerodrom", HourlyRateMkd = 240, FullDayRateMkd = 1320, BatteryPercent = 91, RangeKm = 72, MaxSpeedKmh = 25, InMaintenance = false },
+            new() { Id = "veh-aerodrom-commuter", Code = "RYD-B18", Name = "Rydio Capitol Commuter", TypeId = "vt-ebike", StationId = "st-aerodrom", HourlyRateMkd = 230, FullDayRateMkd = 1260, BatteryPercent = 96, RangeKm = 68, MaxSpeedKmh = 25, InMaintenance = false },
+
+            // Service bay unit (hidden from public catalog)
+            new() { Id = "veh-s1-service", Code = "RYD-S05", Name = "Rydio S1 Pro #05", TypeId = "vt-scooter", StationId = "st-park", HourlyRateMkd = 180, FullDayRateMkd = 950, BatteryPercent = 42, RangeKm = 48, MaxSpeedKmh = 25, InMaintenance = true }
+        };
+
+        var existingIds = (await db.Vehicles.Select(v => v.Id).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingCodes = (await db.Vehicles.Select(v => v.Code).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingStationIds = (await db.Stations.Select(s => s.Id).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingTypeIds = (await db.VehicleTypes.Select(t => t.Id).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var toInsert = canonicalFleet
+            .Where(v =>
+                !existingIds.Contains(v.Id) &&
+                !existingCodes.Contains(v.Code) &&
+                existingStationIds.Contains(v.StationId) &&
+                existingTypeIds.Contains(v.TypeId))
+            .ToList();
+
+        if (toInsert.Count > 0)
+        {
+            db.Vehicles.AddRange(toInsert);
             await db.SaveChangesAsync();
         }
+
 
         if (!await db.Users.AnyAsync())
         {
@@ -166,12 +229,7 @@ public static class DbSeeder
                 END IF;
             END $$;
 
-            DO $$
-            BEGIN
-                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Vehicles_Name" ON "Vehicles" ("Name");
-            EXCEPTION WHEN unique_violation THEN
-                RAISE WARNING 'Skipped IX_Vehicles_Name creation due to pre-existing duplicate rows.';
-            END $$;
+            DROP INDEX IF EXISTS "IX_Vehicles_Name";
 
             DO $$
             BEGIN

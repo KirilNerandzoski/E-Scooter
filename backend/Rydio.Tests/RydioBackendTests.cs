@@ -593,6 +593,44 @@ public sealed class RydioBackendTests : IDisposable
     }
 
     [Fact]
+    public async Task SeededFleet_Has6PublicRidesPerStation_AndSharedModelNamesAcrossStations()
+    {
+        await using var db = await CreateSeededDbAsync();
+        var stationIds = await db.Stations.Select(s => s.Id).ToListAsync();
+        Assert.Equal(6, stationIds.Count);
+        foreach (var stationId in stationIds)
+        {
+            Assert.Equal(6, await db.Vehicles.CountAsync(v => v.StationId == stationId && !v.InMaintenance));
+        }
+
+        // Codes stay globally unique
+        var codes = await db.Vehicles.Select(v => v.Code).ToListAsync();
+        Assert.Equal(codes.Count, codes.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        // Re-running the seeder is idempotent
+        await DbSeeder.SeedAsync(db);
+        Assert.Equal(codes.Count, await db.Vehicles.CountAsync());
+
+        var superAdmin = await db.Users.FirstAsync(u => u.Email == RbacPolicies.SuperAdminEmail);
+        var adminCtrl = new AdminController(db);
+        AttachUser(adminCtrl, superAdmin);
+
+        // Same model name at a different station is allowed; same station is rejected
+        Assert.IsType<OkObjectResult>(await adminCtrl.AddVehicle(new("RYD-X01", "Rydio Vodno Apex", "vt-scooter", "st-plostad")));
+        Assert.IsType<ConflictObjectResult>(await adminCtrl.AddVehicle(new("RYD-X02", "Rydio Vodno Apex", "vt-scooter", "st-plostad")));
+        Assert.IsType<ConflictObjectResult>(await adminCtrl.AddVehicle(new("RYD-S01", "Brand New Model", "vt-scooter", "st-park")));
+
+        // Reservation records the station the rider took it from
+        var kiril = await db.Users.FirstAsync(u => u.Email == "kiril@rydio.mk");
+        var resCtrl = new ReservationsController(db);
+        AttachUser(resCtrl, kiril);
+        var start = DateTimeOffset.UtcNow.AddHours(3);
+        var created = await resCtrl.Create(new("veh-karpos-pro", start, start.AddHours(2)), CancellationToken.None);
+        var res = Assert.IsType<Reservation>(Assert.IsType<OkObjectResult>(created).Value);
+        Assert.Equal("st-karpos", res.PickupStationId);
+    }
+
+    [Fact]
     public async Task FullHttpPipeline_EnforcesJwtRbac_Json404OnUnknownApi_AndDelegatedAdminUserCount()
     {
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

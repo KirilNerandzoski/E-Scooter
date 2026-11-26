@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Ban, Check, Loader2, Play, Trash2 } from 'lucide-react';
+import { Ban, Check, Loader2, MapPin, Play, Trash2 } from 'lucide-react';
 import type { Reservation, ReservationStatus, Station, Vehicle } from '../../types/rydio';
 import { formatMkd, formatShortDateTime } from '../../utils/pricing';
 import type { PendingConfirm } from './types';
@@ -61,6 +61,22 @@ export function AdminReservationsSection({
     [vehicles]
   );
 
+  const resolveVehicleCode = useCallback(
+    (r: Reservation) => {
+      if (!r.vehicleId) return null;
+      return vehicles.find((v) => v.id === r.vehicleId)?.code ?? null;
+    },
+    [vehicles]
+  );
+
+  const resolveStation = useCallback(
+    (stationId?: string) => {
+      if (!stationId) return null;
+      return stations.find((s) => s.id === stationId) ?? null;
+    },
+    [stations]
+  );
+
   const filteredReservations = useMemo(() => {
     const fromMs = resFromDate ? new Date(`${resFromDate}T00:00:00`).getTime() : null;
     const toMs = resToDate ? new Date(`${resToDate}T23:59:59`).getTime() : null;
@@ -81,11 +97,19 @@ export function AdminReservationsSection({
       if (resSearch.trim()) {
         const q = resSearch.toLowerCase();
         const vehName = resolveVehicleLabel(r).toLowerCase();
+        const vehCode = (resolveVehicleCode(r) ?? '').toLowerCase();
+        const pickupSt = resolveStation(r.pickupStationId);
+        const returnSt = resolveStation(r.returnStationId);
+        const pickupLabel = `${pickupSt?.name ?? ''} ${pickupSt?.code ?? ''}`.toLowerCase();
+        const returnLabel = `${returnSt?.name ?? ''} ${returnSt?.code ?? ''}`.toLowerCase();
         return (
           r.id.toLowerCase().includes(q) ||
           r.customerName.toLowerCase().includes(q) ||
           r.customerEmail.toLowerCase().includes(q) ||
-          vehName.includes(q)
+          vehName.includes(q) ||
+          vehCode.includes(q) ||
+          pickupLabel.includes(q) ||
+          returnLabel.includes(q)
         );
       }
       return true;
@@ -98,6 +122,8 @@ export function AdminReservationsSection({
     resToDate,
     resSearch,
     resolveVehicleLabel,
+    resolveVehicleCode,
+    resolveStation,
   ]);
 
   const runStatusUpdate = async (id: string, status: ReservationStatus) => {
@@ -132,7 +158,7 @@ export function AdminReservationsSection({
           <input
             id="res-filter-search"
             type="search"
-            placeholder="ID, rider, vehicle..."
+            placeholder="ID, rider, vehicle, station..."
             value={resSearch}
             onChange={(e) => setResSearch(e.target.value)}
             className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
@@ -237,10 +263,22 @@ export function AdminReservationsSection({
         ) : (
           filteredReservations.map((r) => {
             const isBusy = busyResId === r.id;
+            const vehCode = resolveVehicleCode(r);
+            const pickupSt = resolveStation(r.pickupStationId);
+            const returnSt = resolveStation(r.returnStationId);
             return (
               <div key={r.id} className="rounded-lg border border-mist bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="tabular-nums text-xs font-semibold text-indigo-depth">{r.id}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="tabular-nums text-xs font-semibold text-indigo-depth">
+                      {r.id}
+                    </span>
+                    {vehCode && (
+                      <span className="tabular-nums rounded border border-mist bg-paper-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-depth">
+                        {vehCode}
+                      </span>
+                    )}
+                  </div>
                   <span
                     className={`rounded border px-2 py-0.5 text-[10px] font-medium tracking-[0.1em] ${statusBadgeClass(r.status)}`}
                   >
@@ -275,6 +313,18 @@ export function AdminReservationsSection({
                       </>
                     )}
                   </div>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-mist bg-paper-white px-2.5 py-1.5 text-xs text-indigo-depth">
+                  <span className="inline-flex items-center gap-1.5 font-medium">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-depth" />
+                    Taken from: {pickupSt ? `${pickupSt.name} (${pickupSt.code})` : 'Skopje Station'}
+                  </span>
+                  {returnSt && (
+                    <span className="text-dilute-ink">
+                      → Returned: <strong className="text-indigo-depth">{returnSt.name}</strong>
+                    </span>
+                  )}
                 </div>
 
                 <p className="tabular-nums mt-2 text-xs text-dilute-ink">
@@ -362,6 +412,7 @@ export function AdminReservationsSection({
               <th className="px-4 py-3">BOOKING</th>
               <th className="px-4 py-3">CUSTOMER</th>
               <th className="px-4 py-3">VEHICLE</th>
+              <th className="px-4 py-3">PICKUP STATION</th>
               <th className="px-4 py-3">WINDOW</th>
               <th className="px-4 py-3">STATUS</th>
               <th className="px-4 py-3 text-right">TOTAL</th>
@@ -371,13 +422,16 @@ export function AdminReservationsSection({
           <tbody className="divide-y divide-mist">
             {filteredReservations.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-dilute-ink">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-dilute-ink">
                   No reservations match the current filters.
                 </td>
               </tr>
             ) : (
               filteredReservations.map((r) => {
                 const isBusy = busyResId === r.id;
+                const vehCode = resolveVehicleCode(r);
+                const pickupSt = resolveStation(r.pickupStationId);
+                const returnSt = resolveStation(r.returnStationId);
                 return (
                   <tr key={r.id} className="hover:bg-paper-white/60">
                     <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs font-medium text-indigo-depth">
@@ -387,7 +441,27 @@ export function AdminReservationsSection({
                       <p className="text-xs font-medium text-indigo-depth">{r.customerName}</p>
                       <p className="text-[11px] text-dilute-ink">{r.customerEmail}</p>
                     </td>
-                    <td className="px-4 py-3.5 text-xs text-indigo-depth">{resolveVehicleLabel(r)}</td>
+                    <td className="px-4 py-3.5 text-xs text-indigo-depth">
+                      <p className="font-medium">{resolveVehicleLabel(r)}</p>
+                      {vehCode && (
+                        <span className="tabular-nums mt-0.5 inline-block rounded border border-mist bg-paper-white px-1.5 py-0.5 text-[10px] font-medium text-dilute-ink">
+                          {vehCode}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-xs">
+                      <p className="inline-flex items-center gap-1 font-medium text-indigo-depth">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-depth" />
+                        <span>
+                          {pickupSt ? `${pickupSt.name} (${pickupSt.code})` : 'Skopje Station'}
+                        </span>
+                      </p>
+                      {returnSt && (
+                        <p className="mt-0.5 text-[11px] text-dilute-ink">
+                          Returned: {returnSt.name}
+                        </p>
+                      )}
+                    </td>
                     <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs text-dilute-ink">
                       {formatShortDateTime(r.startTime)} → {formatShortDateTime(r.endTime)}
                     </td>

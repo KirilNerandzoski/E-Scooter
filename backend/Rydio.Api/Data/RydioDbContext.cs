@@ -37,7 +37,6 @@ public class RydioDbContext(DbContextOptions<RydioDbContext> options) : DbContex
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Code).IsUnique();
-            e.HasIndex(x => x.Name).IsUnique();
             e.HasOne(x => x.Type)
                 .WithMany()
                 .HasForeignKey(x => x.TypeId)

@@ -77,8 +77,8 @@ public class AdminController(RydioDbContext db) : ControllerBase
             return Conflict(new { message = $"Vehicle code \"{code}\" is already in use." });
 
         var nameLower = name.ToLowerInvariant();
-        if (await db.Vehicles.AnyAsync(v => v.Name.ToLower() == nameLower))
-            return Conflict(new { message = $"A vehicle named \"{name}\" already exists." });
+        if (await db.Vehicles.AnyAsync(v => v.StationId == req.StationId && v.Name.ToLower() == nameLower))
+            return Conflict(new { message = $"A vehicle named \"{name}\" is already docked at this station." });
 
         var vehicle = new Vehicle
         {
@@ -113,12 +113,13 @@ public class AdminController(RydioDbContext db) : ControllerBase
             vehicle.Code = nextCode;
         }
 
+        var targetStationId = !string.IsNullOrWhiteSpace(req.StationId) ? req.StationId : vehicle.StationId;
         if (!string.IsNullOrWhiteSpace(req.Name))
         {
             var nextName = req.Name.Trim();
             var nextNameLower = nextName.ToLowerInvariant();
-            if (await db.Vehicles.AnyAsync(v => v.Id != id && v.Name.ToLower() == nextNameLower))
-                return Conflict(new { message = $"A vehicle named \"{nextName}\" already exists." });
+            if (await db.Vehicles.AnyAsync(v => v.Id != id && v.StationId == targetStationId && v.Name.ToLower() == nextNameLower))
+                return Conflict(new { message = $"A vehicle named \"{nextName}\" is already docked at that station." });
             vehicle.Name = nextName;
         }
 

@@ -501,6 +501,9 @@ export function App() {
     const vehicle = vehicles.find((v) => v.id === payload.vehicleId);
     if (!vehicle) return false;
 
+    const pickupStationName =
+      stations.find((s) => s.id === vehicle.stationId)?.name ?? 'Skopje Station';
+
     if (apiLive) {
       try {
         const created = await createReservationInApi({
@@ -514,7 +517,7 @@ export function App() {
         setBookingWindowOverride(null);
         setBookingVehicle(null);
         setActiveTab('my-rides');
-        showToast(`Reserved ${vehicle.name} (${created.id}).`);
+        showToast(`Reserved ${vehicle.name} from ${pickupStationName} (${created.id}).`);
         return true;
       } catch (err) {
         showToast(
@@ -553,7 +556,7 @@ export function App() {
     setBookingWindowOverride(null);
     setBookingVehicle(null);
     setActiveTab('my-rides');
-    showToast(`Reserved ${vehicle.name} (${newRes.id}).`);
+    showToast(`Reserved ${vehicle.name} from ${pickupStationName} (${newRes.id}).`);
     return true;
   };
 
@@ -721,8 +724,15 @@ export function App() {
       showToast(`Vehicle code "${veh.code.trim()}" is already in use.`, 'error');
       return false;
     }
-    if (vehicles.some((v) => v.name.trim().toLowerCase() === nameNorm)) {
-      showToast(`A vehicle named "${veh.name.trim()}" already exists.`, 'error');
+    if (
+      vehicles.some(
+        (v) => v.stationId === veh.stationId && v.name.trim().toLowerCase() === nameNorm
+      )
+    ) {
+      showToast(
+        `A vehicle named "${veh.name.trim()}" is already docked at this station.`,
+        'error'
+      );
       return false;
     }
 
@@ -756,9 +766,21 @@ export function App() {
       }
     }
     if (patch.name) {
+      const currentVeh = vehicles.find((v) => v.id === vehicleId);
+      const targetStation = patch.stationId ?? currentVeh?.stationId ?? '';
       const nameNorm = patch.name.trim().toLowerCase();
-      if (vehicles.some((v) => v.id !== vehicleId && v.name.trim().toLowerCase() === nameNorm)) {
-        showToast(`A vehicle named "${patch.name.trim()}" already exists.`, 'error');
+      if (
+        vehicles.some(
+          (v) =>
+            v.id !== vehicleId &&
+            v.stationId === targetStation &&
+            v.name.trim().toLowerCase() === nameNorm
+        )
+      ) {
+        showToast(
+          `A vehicle named "${patch.name.trim()}" is already docked at that station.`,
+          'error'
+        );
         return false;
       }
     }
