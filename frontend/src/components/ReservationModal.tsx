@@ -15,21 +15,22 @@ import {
   formatReservationRange,
   getMaxEndDateTimeLocal,
   getMinStartDateTimeLocal,
-  getOverlappingReservations,
-  getUpcomingVehicleReservations,
   MAX_RENTAL_DAYS,
   suggestWindowAfterReservation,
   toLocalDateTimeInput,
   toSafeIso,
 } from '../utils/pricing';
+import { buildStationOptionsForModel, normalizeModelKey } from '../utils/productGroups';
 import { Modal } from './Modal';
 import { VehicleSilhouette } from './VehicleSilhouette';
 import { resolveVehicleSilhouetteKind } from '../utils/vehicleSilhouette';
 
 interface ReservationModalProps {
   vehicle: Vehicle;
-  vehicleType?: VehicleType;
-  station?: Station;
+  allVehicles: Vehicle[];
+  vehicleTypes: VehicleType[];
+  stations: Station[];
+  preferredStationId?: string;
   initialStart: string;
   initialEnd: string;
   reservations: Reservation[];
@@ -56,8 +57,10 @@ const DURATION_PRESETS = [
 
 export function ReservationModal({
   vehicle,
-  vehicleType,
-  station,
+  allVehicles,
+  vehicleTypes,
+  stations,
+  preferredStationId,
   initialStart,
   initialEnd,
   reservations,
@@ -71,6 +74,55 @@ export function ReservationModal({
   const [submitting, setSubmitting] = useState(false);
   const [nowRef, setNowRef] = useState(() => new Date());
 
+  const modelUnits = useMemo(() => {
+    const key = normalizeModelKey(vehicle.name);
+    const matching = allVehicles.filter(
+      (v) => !v.inMaintenance && normalizeModelKey(v.name) === key
+    );
+    return matching.length > 0 ? matching : [vehicle];
+  }, [allVehicles, vehicle]);
+
+  const startIso = toSafeIso(startTime);
+  const endIso = toSafeIso(endTime);
+  const windowInvalid =
+    !startIso ||
+    !endIso ||
+    new Date(endIso).getTime() <= new Date(startIso).getTime();
+
+  const stationOptions = useMemo(
+    () =>
+      buildStationOptionsForModel(
+        modelUnits,
+        stations,
+        reservations,
+        startIso,
+        endIso,
+        windowInvalid,
+        nowRef
+      ),
+    [modelUnits, stations, reservations, startIso, endIso, windowInvalid, nowRef]
+  );
+
+  const [selectedStationId, setSelectedStationId] = useState<string>(() => {
+    if (preferredStationId && modelUnits.some((u) => u.stationId === preferredStationId)) {
+      return preferredStationId;
+    }
+    return vehicle.stationId;
+  });
+
+  const activeStationOption = useMemo(
+    () =>
+      stationOptions.find((o) => o.station.id === selectedStationId) ?? stationOptions[0],
+    [stationOptions, selectedStationId]
+  );
+
+  const activeVehicle = activeStationOption?.unit ?? vehicle;
+  const activeStation = activeStationOption?.station;
+  const vehicleType = useMemo(
+    () => vehicleTypes.find((t) => t.id === activeVehicle.typeId),
+    [vehicleTypes, activeVehicle.typeId]
+  );
+
   const minStartLocal = useMemo(() => getMinStartDateTimeLocal(nowRef), [nowRef]);
   const maxEndLocal = useMemo(
     () => getMaxEndDateTimeLocal(startTime, nowRef),
@@ -80,35 +132,35 @@ export function ReservationModal({
   const price = useMemo(
     () =>
       calculateReservationPrice(
-        vehicle,
+        activeVehicle,
         startTime,
         endTime,
         nowRef,
         vehicleType?.fullDayDiscountPercent ?? 20
       ),
-    [vehicle, startTime, endTime, nowRef, vehicleType?.fullDayDiscountPercent]
+    [activeVehicle, startTime, endTime, nowRef, vehicleType?.fullDayDiscountPercent]
   );
 
-  const upcomingBookings = useMemo(
-    () => getUpcomingVehicleReservations(vehicle, reservations, nowRef),
-    [vehicle, reservations, nowRef]
+  const upcomingBookings = activeStationOption?.upcoming ?? [];
+  const conflictingBookings = useMemo(
+    () => (price.valid ? (activeStationOption?.conflicts ?? []) : []),
+    [price.valid, activeStationOption]
   );
-
-  const conflictingBookings = useMemo(() => {
-    if (!price.valid) return [];
-    return getOverlappingReservations(
-      vehicle,
-      reservations,
-      toSafeIso(startTime),
-      toSafeIso(endTime),
-      nowRef
-    );
-  }, [vehicle, reservations, startTime, endTime, price.valid, nowRef]);
-
   const hasConflict = conflictingBookings.length > 0;
+  const alternativeFreeStation = useMemo(
+    () =>
+      hasConflict
+        ? stationOptions.find((o) => o.station.id !== activeStation?.id && o.isAvailable)
+        : undefined,
+    [hasConflict, stationOptions, activeStation?.id]
+  );
 
   const canSubmit =
-    price.valid && !hasConflict && !vehicle.inMaintenance && Boolean(currentUser) && !submitting;
+    price.valid &&
+    !hasConflict &&
+    !activeVehicle.inMaintenance &&
+    Boolean(currentUser) &&
+    !submitting;
 
   const applyPreset = (hours: number, fromNow: boolean) => {
     const freshNow = new Date();
@@ -122,9 +174,11 @@ export function ReservationModal({
       return;
     }
 
-    const startIso = toSafeIso(startTime);
-    const baseStart = startIso ? new Date(startIso) : new Date(freshNow.getTime() + 60 * 60 * 1000);
-    if (!startIso) {
+    const parsedStart = toSafeIso(startTime);
+    const baseStart = parsedStart
+      ? new Date(parsedStart)
+      : new Date(freshNow.getTime() + 60 * 60 * 1000);
+    if (!parsedStart) {
       baseStart.setMinutes(0, 0, 0);
       setStartTime(toLocalDateTimeInput(baseStart));
     }
@@ -134,15 +188,15 @@ export function ReservationModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const startIso = toSafeIso(startTime);
-    const endIso = toSafeIso(endTime);
-    if (!canSubmit || !startIso || !endIso) return;
+    const sIso = toSafeIso(startTime);
+    const eIso = toSafeIso(endTime);
+    if (!canSubmit || !sIso || !eIso) return;
     setSubmitting(true);
     try {
       await onConfirm({
-        vehicleId: vehicle.id,
-        startTime: startIso,
-        endTime: endIso,
+        vehicleId: activeVehicle.id,
+        startTime: sIso,
+        endTime: eIso,
         basePriceMkd: price.basePriceMkd,
         discountAppliedMkd: price.discountAppliedMkd,
         totalPriceMkd: price.finalPriceMkd,
@@ -153,7 +207,7 @@ export function ReservationModal({
   };
 
   const silhouetteKind = resolveVehicleSilhouetteKind(
-    vehicle.name,
+    activeVehicle.name,
     vehicleType?.name ?? 'E-Scooter'
   );
 
@@ -170,18 +224,20 @@ export function ReservationModal({
               id="reserve-modal-title"
               className="font-display text-xl font-normal text-indigo-depth sm:text-2xl"
             >
-              Reserve {vehicle.name}
+              Reserve {activeVehicle.name}
             </h2>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-dilute-ink">
-              <span className="tabular-nums font-medium text-indigo-depth">{vehicle.code}</span>
+              <span className="tabular-nums font-medium text-indigo-depth">
+                {activeVehicle.code}
+              </span>
               <span>{vehicleType?.name ?? 'Electric'}</span>
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 font-medium text-indigo-depth">
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
-                {station?.name ?? 'Skopje'}
+                {activeStation?.name ?? 'Skopje'}
               </span>
               <span className="inline-flex items-center gap-1 tabular-nums">
                 <BatteryCharging className="h-3.5 w-3.5 shrink-0" />
-                {vehicle.batteryPercent}% · {vehicle.rangeKm} km
+                {activeVehicle.batteryPercent}% · {activeVehicle.rangeKm} km
               </span>
             </p>
           </div>
@@ -224,12 +280,74 @@ export function ReservationModal({
           </div>
         )}
 
-        {/* Existing Reserved Windows on This Vehicle */}
+        {/* Pickup Station Selector */}
+        <div>
+          <span className="mb-2 block text-[11px] font-medium tracking-[0.14em] text-dilute-ink">
+            CHOOSE PICKUP STATION ({stationOptions.length}{' '}
+            {stationOptions.length === 1 ? 'LOCATION' : 'LOCATIONS'})
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Choose pickup station"
+            className="grid gap-2 sm:grid-cols-2"
+          >
+            {stationOptions.map((opt) => {
+              const isSelected = opt.station.id === activeStation?.id;
+              return (
+                <button
+                  key={opt.station.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => setSelectedStationId(opt.station.id)}
+                  className={`flex flex-col justify-between gap-1.5 rounded-md border p-3 text-left transition-colors ${
+                    isSelected
+                      ? 'border-indigo-depth bg-indigo-depth text-surface-pure shadow-sm'
+                      : opt.isAvailable
+                        ? 'border-mist bg-surface-pure text-indigo-depth hover:border-indigo-depth/60'
+                        : 'border-status-warn-border bg-status-warn-bg/50 text-indigo-depth hover:border-status-warn-text/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{opt.station.name}</span>
+                    </span>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] ${
+                        opt.isAvailable
+                          ? isSelected
+                            ? 'bg-status-ok-bg text-status-ok-text'
+                            : 'border border-status-ok-border bg-status-ok-bg text-status-ok-text'
+                          : 'border border-status-warn-border bg-status-warn-bg text-status-warn-text'
+                      }`}
+                    >
+                      {opt.isAvailable ? 'FREE' : 'RESERVED'}
+                    </span>
+                  </div>
+                  <div
+                    className={`flex items-center justify-between gap-2 text-[11px] tabular-nums ${
+                      isSelected ? 'text-basin-soft' : 'text-dilute-ink'
+                    }`}
+                  >
+                    <span>
+                      {opt.unit.code} · {opt.station.district}
+                    </span>
+                    <span>{opt.unit.batteryPercent}% battery</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Existing Reserved Windows on Selected Station Unit */}
         {upcomingBookings.length > 0 && (
           <div className="rounded-md border border-status-warn-border bg-status-warn-bg px-3.5 py-3 text-xs text-status-warn-text">
             <p className="flex items-center gap-1.5 font-semibold tracking-[0.08em]">
               <Clock className="h-3.5 w-3.5 shrink-0" />
-              RESERVED WINDOWS ON THIS VEHICLE
+              RESERVED AT {(activeStation?.name ?? 'THIS STATION').toUpperCase()} (
+              {activeVehicle.code})
             </p>
             <ul className="mt-1.5 space-y-1.5">
               {upcomingBookings.slice(0, 4).map((b) => (
@@ -328,33 +446,59 @@ export function ReservationModal({
         {(!price.valid || hasConflict) && (
           <div
             role="alert"
-            className="flex items-start gap-2.5 rounded-md border border-status-danger-text/30 bg-status-danger-bg px-3.5 py-3 text-xs text-status-danger-deep"
+            className="flex flex-wrap items-center justify-between gap-2.5 rounded-md border border-status-danger-text/30 bg-status-danger-bg px-3.5 py-3 text-xs text-status-danger-deep"
           >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {!price.valid
-                ? price.error
-                : `Reserved between ${formatReservationRange(conflictingBookings[0].startTime, conflictingBookings[0].endTime)}. Choose a start/return window outside that period.`}
+            <span className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {!price.valid
+                  ? price.error
+                  : `Reserved at ${activeStation?.name ?? 'this station'} between ${formatReservationRange(conflictingBookings[0].startTime, conflictingBookings[0].endTime)}. ${
+                      alternativeFreeStation
+                        ? `Switch to ${alternativeFreeStation.station.name} above or choose another time.`
+                        : 'Choose a start/return window outside that period.'
+                    }`}
+              </span>
             </span>
+            {hasConflict && alternativeFreeStation && (
+              <button
+                type="button"
+                onClick={() => setSelectedStationId(alternativeFreeStation.station.id)}
+                className="rounded border border-status-danger-deep/35 bg-surface-pure px-2.5 py-1 text-[11px] font-semibold text-status-danger-deep transition-colors hover:bg-status-danger-deep hover:text-surface-pure"
+              >
+                Use {alternativeFreeStation.station.name}
+              </button>
+            )}
           </div>
         )}
 
         {/* Transparent Live Receipt */}
         <div className="rounded-md border border-mist bg-white p-3.5 sm:p-4">
           <div className="flex items-center justify-between gap-2 text-xs text-dilute-ink">
+            <span>Pickup station</span>
+            <span className="shrink-0 font-semibold text-indigo-depth">
+              {activeStation?.name ?? 'Skopje'} ({activeVehicle.code})
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs text-dilute-ink">
             <span>Hourly tariff</span>
             <span className="tabular-nums shrink-0 font-medium text-indigo-depth">
-              {formatMkd(vehicle.hourlyRateMkd)} / hr
+              {formatMkd(activeVehicle.hourlyRateMkd)} / hr
             </span>
           </div>
           <div className="mt-2 flex items-start justify-between gap-3 text-xs text-dilute-ink">
             <span>
               Full-day cap (auto-caps from{' '}
-              {Math.max(1, Math.ceil(vehicle.fullDayRateMkd / Math.max(1, vehicle.hourlyRateMkd)))}h
-              onward per 24h block)
+              {Math.max(
+                1,
+                Math.ceil(
+                  activeVehicle.fullDayRateMkd / Math.max(1, activeVehicle.hourlyRateMkd)
+                )
+              )}
+              h onward per 24h block)
             </span>
             <span className="tabular-nums shrink-0 font-medium text-indigo-depth">
-              {formatMkd(vehicle.fullDayRateMkd)} / day
+              {formatMkd(activeVehicle.fullDayRateMkd)} / day
             </span>
           </div>
 
@@ -396,7 +540,8 @@ export function ReservationModal({
         </div>
 
         <p className="text-[11px] leading-relaxed text-dilute-ink">
-          Free cancellation up to 1 hour before pickup. Pickup opens 30 minutes before start.
+          Free cancellation up to 1 hour before pickup. Pickup opens 30 minutes before start at{' '}
+          <strong className="text-indigo-depth">{activeStation?.name ?? 'your station'}</strong>.
           Maximum duration {MAX_RENTAL_DAYS} days. Late returns incur a 1.5× hourly tariff penalty.
         </p>
 

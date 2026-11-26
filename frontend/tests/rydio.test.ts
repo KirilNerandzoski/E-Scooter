@@ -21,6 +21,8 @@ import {
   normalizeUserRole,
   sanitizeUsersRbac,
 } from '../src/utils/rbac.ts';
+import { groupVehiclesByModel } from '../src/utils/productGroups.ts';
+import { INITIAL_STATIONS, INITIAL_VEHICLES } from '../src/data/seedData.ts';
 import type { Reservation, Vehicle } from '../src/types/rydio.ts';
 
 const sampleVehicle: Vehicle = {
@@ -377,4 +379,62 @@ test('reserved vehicle window helpers surface overlapping and upcoming bookings 
 
   const suggested = suggestWindowAfterReservation(overlaps[0].endTime, 2, now);
   assert.equal(new Date(suggested.startLocal) > new Date(overlaps[0].endTime), true);
+});
+
+test('groupVehiclesByModel collapses multi-station models into 1 product card and tracks per-station booking status', () => {
+  const now = new Date('2026-11-27T10:00:00Z');
+  const reservations: Reservation[] = [
+    {
+      id: 'RES-PLOSTAD1',
+      vehicleId: 'veh-s1-pro',
+      customerName: 'Kiril',
+      customerEmail: 'kiril@rydio.mk',
+      pickupStationId: 'st-plostad',
+      startTime: '2026-11-27T12:00:00Z',
+      endTime: '2026-11-27T16:00:00Z',
+      status: 'Reserved',
+      basePriceMkd: 720,
+      discountAppliedMkd: 0,
+      latePenaltyMkd: 0,
+      totalPriceMkd: 720,
+      createdAt: '2026-11-27T09:00:00Z',
+    },
+  ];
+
+  // Across all 6 stations (36 public units), grouping produces 13 unique models with zero duplicates
+  const allGroups = groupVehiclesByModel({
+    vehicles: INITIAL_VEHICLES,
+    stations: INITIAL_STATIONS,
+    reservations,
+    filterTypeId: '',
+    filterStationId: '',
+    startIso: '2026-11-27T13:00:00Z',
+    endIso: '2026-11-27T15:00:00Z',
+    windowInvalid: false,
+    now,
+  });
+  assert.equal(allGroups.length, 13);
+
+  // Rydio S1 Pro has 3 stations: Plostad is reserved, Karpos 3 & Aerodrom remain free -> leadVehicle defaults to free station
+  const s1Pro = allGroups.find((g) => g.leadVehicle.name === 'Rydio S1 Pro');
+  assert.ok(s1Pro);
+  assert.equal(s1Pro.allStationOptions.length, 3);
+  assert.equal(s1Pro.freeScopedStations.length, 2);
+  assert.equal(s1Pro.reservedScopedStations.length, 1);
+  assert.equal(s1Pro.reservedScopedStations[0].station.id, 'st-plostad');
+  assert.notEqual(s1Pro.leadVehicle.stationId, 'st-plostad');
+
+  // Filtering by Gradski Park shows all 6 distinct models docked at Gradski Park
+  const parkGroups = groupVehiclesByModel({
+    vehicles: INITIAL_VEHICLES,
+    stations: INITIAL_STATIONS,
+    reservations,
+    filterTypeId: '',
+    filterStationId: 'st-park',
+    startIso: '2026-11-27T13:00:00Z',
+    endIso: '2026-11-27T15:00:00Z',
+    windowInvalid: false,
+    now,
+  });
+  assert.equal(parkGroups.length, 6);
 });

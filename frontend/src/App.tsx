@@ -1467,8 +1467,10 @@ export function App() {
       {bookingVehicle && (
         <ReservationModal
           vehicle={bookingVehicle}
-          vehicleType={vehicleTypes.find((t) => t.id === bookingVehicle.typeId)}
-          station={stations.find((s) => s.id === bookingVehicle.stationId)}
+          allVehicles={vehicles}
+          vehicleTypes={vehicleTypes}
+          stations={stations}
+          preferredStationId={filterStationId || undefined}
           initialStart={bookingWindowOverride?.start ?? filterStart}
           initialEnd={bookingWindowOverride?.end ?? filterEnd}
           reservations={availabilityReservations}

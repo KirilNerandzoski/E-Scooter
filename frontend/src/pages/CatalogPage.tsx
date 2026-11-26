@@ -20,14 +20,12 @@ import {
   formatWindowDuration,
   getMaxEndDateTimeLocal,
   getMinStartDateTimeLocal,
-  getOverlappingReservations,
-  getUpcomingVehicleReservations,
-  isVehicleAvailable,
   suggestWindowAfterReservation,
   toLocalDateTimeInput,
   toSafeIso,
   validateFilterWindow,
 } from '../utils/pricing';
+import { groupVehiclesByModel } from '../utils/productGroups';
 import { VehicleSilhouette } from '../components/VehicleSilhouette';
 import { resolveVehicleSilhouetteKind } from '../utils/vehicleSilhouette';
 
@@ -127,59 +125,59 @@ export function CatalogPage({
     setPage(1);
   };
 
-  const matchingVehicles = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return vehicles
-      .filter((v) => {
-        if (v.inMaintenance) return false;
-        if (filterTypeId && v.typeId !== filterTypeId) return false;
-        if (filterStationId && v.stationId !== filterStationId) return false;
-        if (q) {
-          const stName = stations.find((s) => s.id === v.stationId)?.name.toLowerCase() ?? '';
-          const matchedText =
-            v.name.toLowerCase().includes(q) ||
-            v.code.toLowerCase().includes(q) ||
-            stName.includes(q);
-          if (!matchedText) return false;
-        }
-        return true;
-      })
-      .sort((a, b) =>
-        sortOrder === 'asc'
-          ? a.hourlyRateMkd - b.hourlyRateMkd
-          : b.hourlyRateMkd - a.hourlyRateMkd
-      );
-  }, [vehicles, stations, filterTypeId, filterStationId, searchQuery, sortOrder]);
+  const groupedProducts = useMemo(() => {
+    const groups = groupVehiclesByModel({
+      vehicles,
+      stations,
+      reservations,
+      filterTypeId,
+      filterStationId,
+      searchQuery,
+      startIso,
+      endIso,
+      windowInvalid,
+      now: nowRef,
+    });
+    return groups.sort((a, b) =>
+      sortOrder === 'asc'
+        ? a.leadVehicle.hourlyRateMkd - b.leadVehicle.hourlyRateMkd
+        : b.leadVehicle.hourlyRateMkd - a.leadVehicle.hourlyRateMkd
+    );
+  }, [
+    vehicles,
+    stations,
+    reservations,
+    filterTypeId,
+    filterStationId,
+    searchQuery,
+    startIso,
+    endIso,
+    windowInvalid,
+    nowRef,
+    sortOrder,
+  ]);
 
   const statusCounts = useMemo(() => {
     if (windowInvalid) {
-      return { all: matchingVehicles.length, available: 0, reserved: 0 };
+      return { all: groupedProducts.length, available: 0, reserved: 0 };
     }
-    let available = 0;
-    let reserved = 0;
-    for (const v of matchingVehicles) {
-      if (isVehicleAvailable(v, reservations, startIso, endIso, nowRef)) {
-        available += 1;
-      } else {
-        reserved += 1;
-      }
+    const available = groupedProducts.filter((g) => g.isAvailableInScope).length;
+    const reserved = groupedProducts.filter((g) => g.hasReservedInScope).length;
+    return { all: groupedProducts.length, available, reserved };
+  }, [groupedProducts, windowInvalid]);
+
+  const filteredGroups = useMemo(() => {
+    if (availabilityFilter === 'all' || windowInvalid) return groupedProducts;
+    if (availabilityFilter === 'available') {
+      return groupedProducts.filter((g) => g.isAvailableInScope);
     }
-    return { all: matchingVehicles.length, available, reserved };
-  }, [matchingVehicles, reservations, startIso, endIso, windowInvalid, nowRef]);
+    return groupedProducts.filter((g) => g.hasReservedInScope);
+  }, [groupedProducts, availabilityFilter, windowInvalid]);
 
-  const filteredVehicles = useMemo(() => {
-    if (availabilityFilter === 'all' || windowInvalid) return matchingVehicles;
-    return matchingVehicles.filter((v) => {
-      const free = isVehicleAvailable(v, reservations, startIso, endIso, nowRef);
-      return availabilityFilter === 'available' ? free : !free;
-    });
-  }, [matchingVehicles, availabilityFilter, reservations, startIso, endIso, windowInvalid, nowRef]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredVehicles.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageItems = filteredVehicles.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageItems = filteredGroups.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const getStationName = (id: string) => stations.find((s) => s.id === id)?.name ?? 'Skopje';
   const getType = (id: string) => vehicleTypes.find((t) => t.id === id);
   const activeStationObj = filterStationId
     ? stations.find((s) => s.id === filterStationId)
@@ -193,8 +191,8 @@ export function CatalogPage({
             Fleet Catalog &amp; Live Availability
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-dilute-ink">
-            All fleet vehicles stay visible with live booking status — reserved rides display their
-            exact start-to-return window. Vehicles in maintenance are hidden.
+            Select any scooter or e-bike model and choose your pickup station when reserving.
+            Reserved windows are shown live; vehicles in maintenance are hidden.
           </p>
         </div>
 
@@ -307,7 +305,7 @@ export function CatalogPage({
             <input
               type="search"
               aria-label="Search catalog by vehicle model, code, or station"
-              placeholder="Search model or code…"
+              placeholder="Search model or station…"
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -430,7 +428,7 @@ export function CatalogPage({
         </div>
       )}
 
-      {/* Results Ledger */}
+      {/* Results Ledger (1 card per distinct model) */}
       <div className="mt-5 space-y-3 sm:mt-6">
         {pageItems.length === 0 ? (
           <div className="rounded-lg border border-mist bg-white p-8 text-center sm:p-12">
@@ -454,17 +452,42 @@ export function CatalogPage({
             </button>
           </div>
         ) : (
-          pageItems.map((vehicle) => {
+          pageItems.map((group) => {
+            const vehicle = group.leadVehicle;
             const vType = getType(vehicle.typeId);
             const typeName = vType?.name ?? 'Electric';
             const silhouetteKind = resolveVehicleSilhouetteKind(vehicle.name, typeName);
-            const conflicts = !windowInvalid
-              ? getOverlappingReservations(vehicle, reservations, startIso, endIso, nowRef)
-              : [];
-            const isReservedForWindow = conflicts.length > 0;
-            const isOutOnRide = conflicts.some((r) => r.status === 'Active');
-            const upcomingBookings = getUpcomingVehicleReservations(vehicle, reservations, nowRef);
-            const nextOtherBooking = !isReservedForWindow ? upcomingBookings[0] : undefined;
+            const totalScopedStations = group.scopedStationOptions.length;
+            const freeStationsCount = group.freeScopedStations.length;
+            const fullyReserved = !windowInvalid && !group.isAvailableInScope;
+            const firstReservedOpt = group.reservedScopedStations[0];
+            const firstConflict = firstReservedOpt?.conflicts[0];
+            const isOutOnRide =
+              fullyReserved &&
+              group.reservedScopedStations.some((o) =>
+                o.conflicts.some((c) => c.status === 'Active')
+              );
+
+            const stationSummary = group.scopedStationOptions
+              .map((o) => o.station.name)
+              .join(' · ');
+
+            const maxBattery = Math.max(
+              ...group.scopedStationOptions.map((o) => o.unit.batteryPercent)
+            );
+
+            const nextUpcomingWhenAllFree =
+              !group.hasReservedInScope
+                ? group.scopedStationOptions
+                    .flatMap((o) =>
+                      o.upcoming.map((u) => ({ stationName: o.station.name, res: u }))
+                    )
+                    .sort(
+                      (a, b) =>
+                        new Date(a.res.startTime).getTime() - new Date(b.res.startTime).getTime()
+                    )[0]
+                : undefined;
+
             const est = !windowInvalid
               ? calculateReservationPrice(
                   vehicle,
@@ -474,11 +497,12 @@ export function CatalogPage({
                   vType?.fullDayDiscountPercent ?? 20
                 )
               : null;
+
             return (
               <article
-                key={vehicle.id}
+                key={group.key}
                 className={`flex flex-col justify-between gap-4 rounded-lg border p-4 transition-colors sm:flex-row sm:items-center sm:p-5 ${
-                  isReservedForWindow
+                  fullyReserved
                     ? 'border-status-warn-border bg-surface-pure'
                     : 'border-mist bg-white hover:border-indigo-depth/45'
                 }`}
@@ -486,7 +510,7 @@ export function CatalogPage({
                 <div className="flex items-start gap-3.5 sm:items-center sm:gap-5">
                   <div
                     className={`shrink-0 rounded-md border p-2 sm:p-2.5 ${
-                      isReservedForWindow
+                      fullyReserved
                         ? 'border-status-warn-border bg-status-warn-bg/60'
                         : 'border-mist bg-paper-white'
                     }`}
@@ -498,21 +522,25 @@ export function CatalogPage({
                   </div>
                   <div className="min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="tabular-nums rounded border border-mist bg-paper-white px-2 py-0.5 text-[11px] font-medium text-indigo-depth">
-                        {vehicle.code}
-                      </span>
+                      {totalScopedStations === 1 && (
+                        <span className="tabular-nums rounded border border-mist bg-paper-white px-2 py-0.5 text-[11px] font-medium text-indigo-depth">
+                          {vehicle.code}
+                        </span>
+                      )}
                       <span className="text-[11px] font-medium tracking-[0.14em] text-dilute-ink">
                         {typeName.toUpperCase()}
                       </span>
                       {!windowInvalid &&
-                        (isReservedForWindow ? (
+                        (fullyReserved ? (
                           <span className="inline-flex items-center gap-1 rounded border border-status-warn-border bg-status-warn-bg px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-status-warn-text">
                             <Clock className="h-3 w-3 shrink-0" />
                             {isOutOnRide ? 'ACTIVE RIDE' : 'RESERVED'}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center rounded border border-status-ok-border bg-status-ok-bg px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-status-ok-text">
-                            AVAILABLE
+                          <span className="inline-flex items-center rounded border border-status-ok-border bg-status-ok-bg px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-status-ok-text tabular-nums">
+                            {totalScopedStations > 1
+                              ? `AVAILABLE · ${freeStationsCount} OF ${totalScopedStations} STATIONS`
+                              : 'AVAILABLE'}
                           </span>
                         ))}
                     </div>
@@ -522,16 +550,17 @@ export function CatalogPage({
                     </h2>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-dilute-ink">
-                      <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-indigo-depth">
                         <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-depth" strokeWidth={1.6} />
-                        {getStationName(vehicle.stationId)}
+                        <span>{stationSummary}</span>
                       </span>
                       <span className="tabular-nums inline-flex items-center gap-1.5">
                         <BatteryCharging
                           className="h-3.5 w-3.5 shrink-0 text-indigo-depth"
                           strokeWidth={1.6}
                         />
-                        {vehicle.batteryPercent}% ({vehicle.rangeKm} km)
+                        {totalScopedStations > 1 ? `Up to ${maxBattery}%` : `${maxBattery}%`} (
+                        {vehicle.rangeKm} km)
                       </span>
                       <span className="tabular-nums inline-flex items-center gap-1.5">
                         <Gauge className="h-3.5 w-3.5 shrink-0 text-indigo-depth" strokeWidth={1.6} />
@@ -539,31 +568,46 @@ export function CatalogPage({
                       </span>
                     </div>
 
-                    {isReservedForWindow && (
+                    {fullyReserved && firstConflict && (
                       <div className="mt-1.5 inline-flex flex-wrap items-center gap-1.5 rounded border border-status-warn-border bg-status-warn-bg px-2.5 py-1 text-xs font-medium text-status-warn-text tabular-nums">
                         <Clock className="h-3.5 w-3.5 shrink-0" />
                         <span>
-                          {isOutOnRide ? 'In use / reserved between ' : 'Reserved between '}
+                          Reserved at {firstReservedOpt.station.name} between{' '}
                           <strong>
                             {formatReservationRange(
-                              conflicts[0].startTime,
-                              conflicts[0].endTime
+                              firstConflict.startTime,
+                              firstConflict.endTime
                             )}
                           </strong>
-                          {conflicts.length > 1 ? ` (+${conflicts.length - 1} more)` : ''}
                         </span>
                       </div>
                     )}
 
-                    {!isReservedForWindow && nextOtherBooking && (
+                    {!fullyReserved && group.hasReservedInScope && firstConflict && (
+                      <p className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-status-warn-text tabular-nums">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        <span>
+                          {firstReservedOpt.station.name} reserved{' '}
+                          <strong>
+                            {formatReservationRange(
+                              firstConflict.startTime,
+                              firstConflict.endTime
+                            )}
+                          </strong>{' '}
+                          · Free at {group.freeScopedStations.map((s) => s.station.name).join(', ')}
+                        </span>
+                      </p>
+                    )}
+
+                    {!group.hasReservedInScope && nextUpcomingWhenAllFree && (
                       <p className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-dilute-ink tabular-nums">
                         <Clock className="h-3 w-3 shrink-0 text-indigo-depth" />
                         <span>
-                          Reserved later:{' '}
+                          {nextUpcomingWhenAllFree.stationName} reserved later:{' '}
                           <strong className="text-indigo-depth">
                             {formatReservationRange(
-                              nextOtherBooking.startTime,
-                              nextOtherBooking.endTime
+                              nextUpcomingWhenAllFree.res.startTime,
+                              nextUpcomingWhenAllFree.res.endTime
                             )}
                           </strong>
                         </span>
@@ -581,14 +625,14 @@ export function CatalogPage({
                     <p className="tabular-nums text-xs text-dilute-ink">
                       Full-day cap: {formatMkd(vehicle.fullDayRateMkd)}
                     </p>
-                    {est?.valid && !isReservedForWindow && (
+                    {est?.valid && !fullyReserved && (
                       <p className="tabular-nums mt-0.5 text-xs font-semibold text-indigo-depth">
                         Est. {formatMkd(est.finalPriceMkd)} ({windowLabel})
                       </p>
                     )}
                   </div>
 
-                  {isReservedForWindow ? (
+                  {fullyReserved ? (
                     <div className="flex flex-col items-end gap-1.5 sm:items-end">
                       <span
                         aria-label="Reserved for selected window"
@@ -600,9 +644,10 @@ export function CatalogPage({
                       <button
                         type="button"
                         onClick={() => {
-                          const lastConflict = conflicts[conflicts.length - 1];
+                          const earliestEnd =
+                            firstConflict?.endTime ?? new Date().toISOString();
                           const nextWin = suggestWindowAfterReservation(
-                            lastConflict.endTime,
+                            earliestEnd,
                             activeDurationHours && activeDurationHours <= 24
                               ? activeDurationHours
                               : 2,
@@ -637,12 +682,12 @@ export function CatalogPage({
       </div>
 
       {/* Pagination */}
-      {filteredVehicles.length > PAGE_SIZE && (
+      {filteredGroups.length > PAGE_SIZE && (
         <div className="mt-7 flex flex-col gap-3 border-t border-mist pt-5 sm:mt-8 sm:flex-row sm:items-center sm:justify-between">
           <span className="tabular-nums text-xs text-dilute-ink">
             Showing {(safePage - 1) * PAGE_SIZE + 1}–
-            {Math.min(safePage * PAGE_SIZE, filteredVehicles.length)} of {filteredVehicles.length}{' '}
-            vehicles ({statusCounts.available} free, {statusCounts.reserved} reserved)
+            {Math.min(safePage * PAGE_SIZE, filteredGroups.length)} of {filteredGroups.length}{' '}
+            models ({statusCounts.available} available)
           </span>
           <div className="flex items-center justify-between gap-2 sm:justify-end">
             <button

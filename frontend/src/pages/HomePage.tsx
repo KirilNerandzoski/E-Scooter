@@ -15,14 +15,12 @@ import {
   formatWindowDuration,
   getMaxEndDateTimeLocal,
   getMinStartDateTimeLocal,
-  getOverlappingReservations,
-  getUpcomingVehicleReservations,
-  isVehicleAvailable,
   suggestWindowAfterReservation,
   toLocalDateTimeInput,
   toSafeIso,
   validateFilterWindow,
 } from '../utils/pricing';
+import { groupVehiclesByModel } from '../utils/productGroups';
 import { SuminagashiCanvas } from '../components/SuminagashiCanvas';
 import { VehicleSilhouette } from '../components/VehicleSilhouette';
 import { resolveVehicleSilhouetteKind } from '../utils/vehicleSilhouette';
@@ -97,25 +95,45 @@ export function HomePage({
       : null;
   const windowLabel = formatWindowDuration(filterStart, filterEnd);
 
-  const matchingVehicles = vehicles.filter((v) => {
-    if (v.inMaintenance) return false;
-    if (filterTypeId && v.typeId !== filterTypeId) return false;
-    if (filterStationId && v.stationId !== filterStationId) return false;
-    return true;
-  });
+  const groupedProducts = useMemo(
+    () =>
+      groupVehiclesByModel({
+        vehicles,
+        stations,
+        reservations,
+        filterTypeId,
+        filterStationId,
+        startIso,
+        endIso,
+        windowInvalid,
+        now: nowRef,
+      }),
+    [
+      vehicles,
+      stations,
+      reservations,
+      filterTypeId,
+      filterStationId,
+      startIso,
+      endIso,
+      windowInvalid,
+      nowRef,
+    ]
+  );
 
-  const availableVehicles = windowInvalid
-    ? []
-    : matchingVehicles.filter((v) =>
-        isVehicleAvailable(v, reservations, startIso, endIso, nowRef)
-      );
+  const availableGroupsCount = useMemo(
+    () => (windowInvalid ? 0 : groupedProducts.filter((g) => g.isAvailableInScope).length),
+    [groupedProducts, windowInvalid]
+  );
 
-  const featuredList = [...matchingVehicles]
-    .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
-    .slice(0, 4);
+  const featuredList = useMemo(
+    () =>
+      [...groupedProducts]
+        .sort((a, b) => Number(b.featured) - Number(a.featured))
+        .slice(0, 4),
+    [groupedProducts]
+  );
 
-  const getStationName = (id: string) =>
-    stations.find((s) => s.id === id)?.name ?? 'Skopje Center';
   const getType = (id: string) => vehicleTypes.find((t) => t.id === id);
 
   const applyPreset = (hours: number, fromNow: boolean) => {
@@ -141,7 +159,6 @@ export function HomePage({
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Full-width flowing Suminagashi indigo ink currents reaching the left HOME rail without overlapping text */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[340px] overflow-hidden sm:h-[440px]">
         <SuminagashiCanvas safeZoneRef={heroCopyRef} className="h-full w-full opacity-95" />
       </div>
@@ -156,7 +173,7 @@ export function HomePage({
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-dilute-ink sm:mt-5 sm:text-base">
             Reserve electric scooters and e-bikes by the hour or full day across {stations.length}{' '}
-            Skopje stations. Transparent hourly tariffs with an automatic daily rate cap.
+            Skopje stations. Choose your model and pick up from the station closest to you.
           </p>
         </div>
 
@@ -314,12 +331,12 @@ export function HomePage({
             <span className="tabular-nums text-xs text-dilute-ink sm:ml-auto">
               {windowInvalid
                 ? 'Choose a valid time window'
-                : `${availableVehicles.length} of ${matchingVehicles.length} ${matchingVehicles.length === 1 ? 'vehicle' : 'vehicles'} free for this window`}
+                : `${availableGroupsCount} of ${groupedProducts.length} ${groupedProducts.length === 1 ? 'model' : 'models'} available`}
             </span>
           </div>
         </form>
 
-        {/* Lower 4-Card Strip (semantic <article> cards with hairline vehicle silhouettes) */}
+        {/* Lower 4-Card Strip (1 card per distinct model) */}
         <section aria-label="Fleet rides for your selected window" className="mt-8 sm:mt-10">
           {featuredList.length === 0 ? (
             <div className="rounded-lg border border-mist bg-white p-8 text-center sm:p-10">
@@ -339,22 +356,31 @@ export function HomePage({
             </div>
           ) : (
             <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
-              {featuredList.map((vehicle, index) => {
+              {featuredList.map((group, index) => {
                 const isLead = index === 0;
+                const vehicle = group.leadVehicle;
                 const vType = getType(vehicle.typeId);
                 const typeName = vType?.name ?? 'Electric';
                 const silhouetteKind = resolveVehicleSilhouetteKind(vehicle.name, typeName);
-                const conflicts = !windowInvalid
-                  ? getOverlappingReservations(vehicle, reservations, startIso, endIso, nowRef)
-                  : [];
-                const isReservedForWindow = conflicts.length > 0;
-                const isOutOnRide = conflicts.some((r) => r.status === 'Active');
-                const upcomingBookings = getUpcomingVehicleReservations(
-                  vehicle,
-                  reservations,
-                  nowRef
+                const totalScopedStations = group.scopedStationOptions.length;
+                const freeStationsCount = group.freeScopedStations.length;
+                const fullyReserved = !windowInvalid && !group.isAvailableInScope;
+                const firstReservedOpt = group.reservedScopedStations[0];
+                const firstConflict = firstReservedOpt?.conflicts[0];
+                const isOutOnRide =
+                  fullyReserved &&
+                  group.reservedScopedStations.some((o) =>
+                    o.conflicts.some((c) => c.status === 'Active')
+                  );
+                const maxBattery = Math.max(
+                  ...group.scopedStationOptions.map((o) => o.unit.batteryPercent)
                 );
-                const nextOtherBooking = !isReservedForWindow ? upcomingBookings[0] : undefined;
+
+                const stationLine =
+                  totalScopedStations > 1
+                    ? `${freeStationsCount}/${totalScopedStations} stations · ${group.scopedStationOptions.map((o) => o.station.name).join(', ')}`
+                    : (group.scopedStationOptions[0]?.station.name ?? 'Skopje');
+
                 const est = !windowInvalid
                   ? calculateReservationPrice(
                       vehicle,
@@ -367,18 +393,18 @@ export function HomePage({
 
                 return (
                   <article
-                    key={vehicle.id}
+                    key={group.key}
                     className={`flex min-h-[264px] flex-col justify-between rounded-lg p-4 transition-all duration-200 sm:p-5 ${
                       isLead
                         ? 'indigo-basin-card border border-indigo-depth text-paper-white shadow-[0_12px_30px_rgba(10,26,51,0.18)] hover:-translate-y-0.5'
-                        : isReservedForWindow
+                        : fullyReserved
                           ? 'border border-status-warn-border bg-surface-pure text-indigo-depth'
                           : 'border border-mist bg-white text-indigo-depth hover:-translate-y-0.5 hover:border-indigo-depth/50 hover:shadow-[0_10px_24px_rgba(10,26,51,0.06)]'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        {!windowInvalid && isReservedForWindow ? (
+                        {!windowInvalid && fullyReserved ? (
                           <span className="inline-flex items-center gap-1 rounded border border-status-warn-border bg-status-warn-bg px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-status-warn-text">
                             <Clock className="h-3 w-3 shrink-0" />
                             {isOutOnRide ? 'ACTIVE RIDE' : 'RESERVED'}
@@ -398,7 +424,7 @@ export function HomePage({
                           }`}
                         >
                           <BatteryCharging className="h-3.5 w-3.5 shrink-0" strokeWidth={1.6} />
-                          {vehicle.batteryPercent}%
+                          {maxBattery}%
                         </span>
                       </div>
 
@@ -419,36 +445,36 @@ export function HomePage({
                       </h2>
 
                       <p
-                        className={`mt-1.5 flex items-center gap-1.5 text-xs ${
+                        className={`mt-1.5 flex items-start gap-1.5 text-xs ${
                           isLead ? 'text-basin-tint' : 'text-dilute-ink'
                         }`}
                       >
-                        <MapPin className="h-3.5 w-3.5 shrink-0" strokeWidth={1.6} />
-                        <span className="truncate">{getStationName(vehicle.stationId)}</span>
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.6} />
+                        <span className="line-clamp-2">{stationLine}</span>
                       </p>
 
-                      {isReservedForWindow && (
+                      {fullyReserved && firstConflict && (
                         <div className="mt-2 rounded border border-status-warn-border bg-status-warn-bg px-2 py-1 text-[11px] leading-snug font-medium text-status-warn-text tabular-nums">
                           Reserved:{' '}
                           <strong>
                             {formatReservationRange(
-                              conflicts[0].startTime,
-                              conflicts[0].endTime
+                              firstConflict.startTime,
+                              firstConflict.endTime
                             )}
                           </strong>
                         </div>
                       )}
 
-                      {!isReservedForWindow && nextOtherBooking && (
+                      {!fullyReserved && group.hasReservedInScope && firstConflict && (
                         <p
                           className={`mt-1.5 text-[11px] leading-snug tabular-nums ${
-                            isLead ? 'text-basin-soft' : 'text-dilute-ink'
+                            isLead ? 'text-basin-soft' : 'text-status-warn-text'
                           }`}
                         >
-                          Reserved later:{' '}
+                          {firstReservedOpt.station.name} booked{' '}
                           {formatReservationRange(
-                            nextOtherBooking.startTime,
-                            nextOtherBooking.endTime
+                            firstConflict.startTime,
+                            firstConflict.endTime
                           )}
                         </p>
                       )}
@@ -478,7 +504,7 @@ export function HomePage({
                         >
                           Day cap {formatMkd(vehicle.fullDayRateMkd)}
                         </p>
-                        {est?.valid && !isReservedForWindow && (
+                        {est?.valid && !fullyReserved && (
                           <p
                             className={`tabular-nums whitespace-nowrap pt-0.5 text-[11px] font-medium ${
                               isLead ? 'text-basin-soft' : 'text-indigo-depth'
@@ -490,7 +516,7 @@ export function HomePage({
                       </div>
 
                       <div className="mt-3 flex items-center justify-between gap-2">
-                        {isReservedForWindow ? (
+                        {fullyReserved ? (
                           <>
                             <span
                               className={`tabular-nums whitespace-nowrap text-[11px] font-medium ${
@@ -502,9 +528,10 @@ export function HomePage({
                             <button
                               type="button"
                               onClick={() => {
-                                const lastConflict = conflicts[conflicts.length - 1];
+                                const earliestEnd =
+                                  firstConflict?.endTime ?? new Date().toISOString();
                                 const nextWin = suggestWindowAfterReservation(
-                                  lastConflict.endTime,
+                                  earliestEnd,
                                   activeDurationHours && activeDurationHours <= 24
                                     ? activeDurationHours
                                     : 2,
@@ -556,14 +583,14 @@ export function HomePage({
             </div>
           )}
 
-          {matchingVehicles.length > 4 && (
+          {groupedProducts.length > 4 && (
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
                 onClick={onFindRides}
                 className="inline-flex min-h-[38px] items-center gap-1.5 text-xs font-medium tracking-[0.12em] text-indigo-depth hover:underline"
               >
-                VIEW ALL {matchingVehicles.length} FLEET VEHICLES ({availableVehicles.length} FREE)
+                VIEW ALL {groupedProducts.length} MODELS ({availableGroupsCount} AVAILABLE)
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
