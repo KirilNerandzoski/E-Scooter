@@ -81,11 +81,11 @@ export function Modal({
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onCloseRef.current();
       }}
-      className="rydio-backdrop-enter fixed inset-0 z-50 flex items-end justify-center bg-[#0A1A33]/45 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:items-center sm:p-4 sm:pb-4"
+      className="rydio-backdrop-enter fixed inset-0 z-50 flex items-end justify-center bg-indigo-depth/45 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:items-center sm:p-4 sm:pb-4"
     >
       <div
         ref={containerRef}
-        className={`rydio-modal-enter w-full ${maxWidthClass} max-h-[92dvh] overflow-y-auto rounded-lg border border-[#DDE2E8] bg-[#F6F7F9] shadow-2xl`}
+        className={`rydio-modal-enter w-full ${maxWidthClass} max-h-[92dvh] overflow-y-auto rounded-lg border border-mist bg-paper-white shadow-2xl`}
       >
         {children}
       </div>

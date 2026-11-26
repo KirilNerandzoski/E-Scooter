@@ -85,49 +85,49 @@ export function AdminUsersSection({
 
   return (
     <div className="mt-6 space-y-5 sm:mt-8 sm:space-y-6">
-      <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
+      <div className="rounded-lg border border-mist bg-white p-4 sm:p-5">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 shrink-0 text-[#0A1A33]" />
-          <h2 className="font-display text-lg font-medium text-[#0A1A33]">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-indigo-depth" />
+          <h2 className="font-display text-lg font-medium text-indigo-depth">
             Role-Based Access Control (RBAC) Policy
           </h2>
         </div>
-        <p className="mt-1 text-xs leading-relaxed text-[#515F73]">
-          Only <strong className="text-[#0A1A33]">{SUPERADMIN_EMAIL}</strong> holds the locked{' '}
-          <strong className="text-[#0A1A33]">SuperAdmin</strong> role with unrestricted control.
-          Every newly registered user starts as a <strong className="text-[#0A1A33]">Customer</strong>{' '}
+        <p className="mt-1 text-xs leading-relaxed text-dilute-ink">
+          Only <strong className="text-indigo-depth">{SUPERADMIN_EMAIL}</strong> holds the locked{' '}
+          <strong className="text-indigo-depth">SuperAdmin</strong> role with unrestricted control.
+          Every newly registered user starts as a <strong className="text-indigo-depth">Customer</strong>{' '}
           with zero website modification rights.
         </p>
         <div className="mt-4 grid gap-2.5 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
-          <div className="rounded border border-[#DDE2E8] bg-[#F6F7F9] p-3">
-            <p className="text-[11px] font-semibold tracking-[0.12em] text-[#515F73]">GUEST</p>
-            <p className="mt-1 text-xs text-[#0A1A33]">
+          <div className="rounded border border-mist bg-paper-white p-3">
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-dilute-ink">GUEST</p>
+            <p className="mt-1 text-xs text-indigo-depth">
               Browse catalog, station map, and live window availability only.
             </p>
           </div>
-          <div className="rounded border border-[#DDE2E8] bg-[#F6F7F9] p-3">
-            <p className="text-[11px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+          <div className="rounded border border-mist bg-paper-white p-3">
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-indigo-depth">
               CUSTOMER (DEFAULT)
             </p>
-            <p className="mt-1 text-xs text-[#0A1A33]">
+            <p className="mt-1 text-xs text-indigo-depth">
               All new sign-ups start here. Book, pick up, return, and cancel own rides only —
               cannot modify the website.
             </p>
           </div>
-          <div className="rounded border border-[#DDE2E8] bg-[#F6F7F9] p-3">
-            <p className="text-[11px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+          <div className="rounded border border-mist bg-paper-white p-3">
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-indigo-depth">
               ADMIN (DELEGATED)
             </p>
-            <p className="mt-1 text-xs text-[#0A1A33]">
+            <p className="mt-1 text-xs text-indigo-depth">
               Granted only by SuperAdmin. Manages fleet, stations, types, and booking statuses;
               cannot manage users or delete records.
             </p>
           </div>
-          <div className="rounded border border-[#0A1A33]/30 bg-white p-3">
-            <p className="text-[11px] font-semibold tracking-[0.12em] text-[#0A1A33]">
+          <div className="rounded border border-indigo-depth/30 bg-white p-3">
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-indigo-depth">
               SUPERADMIN (SINGLETON)
             </p>
-            <p className="mt-1 text-xs text-[#0A1A33]">
+            <p className="mt-1 text-xs text-indigo-depth">
               Exclusive to {SUPERADMIN_EMAIL}. Full permission over fleet, stations, types,
               reservations, reports, and user roles.
             </p>
@@ -138,12 +138,12 @@ export function AdminUsersSection({
       <form
         noValidate
         onSubmit={(e) => void handleCreateUser(e)}
-        className="space-y-3 rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5"
+        className="space-y-3 rounded-lg border border-mist bg-white p-4 sm:p-5"
       >
         {userFormError && (
           <div
             role="alert"
-            className="flex items-center gap-2 rounded border border-[#9B2C2C]/30 bg-[#FFF5F5] px-3 py-2 text-xs text-[#822020]"
+            className="flex items-center gap-2 rounded border border-status-danger-text/30 bg-status-danger-bg px-3 py-2 text-xs text-status-danger-deep"
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{userFormError}</span>
@@ -153,7 +153,7 @@ export function AdminUsersSection({
           <div>
             <label
               htmlFor="add-user-name"
-              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
             >
               FULL NAME
             </label>
@@ -164,13 +164,13 @@ export function AdminUsersSection({
               value={newUserName}
               onChange={(e) => setNewUserName(e.target.value)}
               required
-              className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
             />
           </div>
           <div>
             <label
               htmlFor="add-user-email"
-              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
             >
               EMAIL ADDRESS
             </label>
@@ -181,13 +181,13 @@ export function AdminUsersSection({
               value={newUserEmail}
               onChange={(e) => setNewUserEmail(e.target.value)}
               required
-              className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
             />
           </div>
           <div>
             <label
               htmlFor="add-user-password"
-              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
             >
               INITIAL PASSWORD
             </label>
@@ -198,13 +198,13 @@ export function AdminUsersSection({
               value={newUserPassword}
               onChange={(e) => setNewUserPassword(e.target.value)}
               required
-              className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
             />
           </div>
           <div>
             <label
               htmlFor="add-user-role"
-              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+              className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
             >
               ASSIGNED ROLE
             </label>
@@ -212,7 +212,7 @@ export function AdminUsersSection({
               id="add-user-role"
               value={newUserRole}
               onChange={(e) => setNewUserRole(e.target.value as AccountRole)}
-              className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
             >
               {ASSIGNABLE_ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -225,7 +225,7 @@ export function AdminUsersSection({
             <button
               type="submit"
               disabled={creating}
-              className="inline-flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded bg-[#0A1A33] px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A] disabled:opacity-45"
+              className="inline-flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded bg-indigo-depth px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-ink-current disabled:opacity-45"
             >
               {creating ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -246,28 +246,28 @@ export function AdminUsersSection({
           const isBusy = busyUserId === u.id;
 
           return (
-            <div key={u.id} className="rounded-lg border border-[#DDE2E8] bg-white p-4">
+            <div key={u.id} className="rounded-lg border border-mist bg-white p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-[#0A1A33]">
-                    {u.name} {isSelf && <span className="text-xs text-[#515F73]">(You)</span>}
+                  <p className="truncate font-medium text-indigo-depth">
+                    {u.name} {isSelf && <span className="text-xs text-dilute-ink">(You)</span>}
                   </p>
-                  <p className="truncate text-xs text-[#515F73]">{u.email}</p>
+                  <p className="truncate text-xs text-dilute-ink">{u.email}</p>
                 </div>
                 {u.active ? (
-                  <span className="shrink-0 rounded border border-[#A7F3D0] bg-[#ECFDF5] px-2 py-0.5 text-[11px] font-medium text-[#065F46]">
+                  <span className="shrink-0 rounded border border-status-ok-border bg-status-ok-bg px-2 py-0.5 text-[11px] font-medium text-status-ok-text">
                     Active
                   </span>
                 ) : (
-                  <span className="shrink-0 rounded border border-[#FECACA] bg-[#FEF2F2] px-2 py-0.5 text-[11px] font-medium text-[#991B1B]">
+                  <span className="shrink-0 rounded border border-status-danger-border bg-status-danger-bg px-2 py-0.5 text-[11px] font-medium text-status-danger-text">
                     Suspended
                   </span>
                 )}
               </div>
 
-              <div className="mt-3 border-t border-[#DDE2E8] pt-3">
+              <div className="mt-3 border-t border-mist pt-3">
                 {isLockedSuperAdmin ? (
-                  <span className="inline-flex items-center gap-1.5 rounded border border-[#0A1A33] bg-[#0A1A33] px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-white">
+                  <span className="inline-flex items-center gap-1.5 rounded border border-indigo-depth bg-indigo-depth px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-white">
                     <ShieldCheck className="h-3.5 w-3.5" />
                     SUPERADMIN (LOCKED)
                   </span>
@@ -289,7 +289,7 @@ export function AdminUsersSection({
                           action: () => onUpdateUserRole(u.id, nextRole),
                         });
                       }}
-                      className="min-h-[38px] flex-1 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-50"
+                      className="min-h-[38px] flex-1 rounded border border-mist bg-paper-white px-2.5 py-1.5 text-xs font-medium text-indigo-depth disabled:opacity-50"
                     >
                       {ASSIGNABLE_ROLES.map((r) => (
                         <option key={r} value={r}>
@@ -301,7 +301,7 @@ export function AdminUsersSection({
                       type="button"
                       disabled={isSelf || isBusy}
                       onClick={() => void handleToggleActive(u.id)}
-                      className="inline-flex min-h-[38px] items-center gap-1 rounded border border-[#DDE2E8] bg-white px-3 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-40"
+                      className="inline-flex min-h-[38px] items-center gap-1 rounded border border-mist bg-white px-3 py-1.5 text-xs font-medium text-indigo-depth disabled:opacity-40"
                     >
                       {isBusy && <Loader2 className="h-3 w-3 animate-spin" />}
                       {u.active ? 'Suspend' : 'Reactivate'}
@@ -318,7 +318,7 @@ export function AdminUsersSection({
                           action: () => onDeleteUser(u.id),
                         })
                       }
-                      className="inline-flex min-h-[38px] min-w-[38px] items-center justify-center rounded border border-[#DDE2E8] p-2 text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-40"
+                      className="inline-flex min-h-[38px] min-w-[38px] items-center justify-center rounded border border-mist p-2 text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:opacity-40"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -331,9 +331,9 @@ export function AdminUsersSection({
       </div>
 
       {/* Desktop Table (md+) */}
-      <div className="hidden overflow-x-auto rounded-lg border border-[#DDE2E8] bg-white md:block">
+      <div className="hidden overflow-x-auto rounded-lg border border-mist bg-white md:block">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-[#DDE2E8] bg-[#F6F7F9] text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+          <thead className="border-b border-mist bg-paper-white text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
             <tr>
               <th className="px-4 py-3">USER</th>
               <th className="px-4 py-3">ROLE</th>
@@ -341,24 +341,24 @@ export function AdminUsersSection({
               <th className="px-4 py-3 text-right">ACTIONS</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#DDE2E8]">
+          <tbody className="divide-y divide-mist">
             {users.map((u) => {
               const isSelf = u.id === currentUser.id;
               const isLockedSuperAdmin = isPrimarySuperAdminEmail(u.email);
               const isBusy = busyUserId === u.id;
 
               return (
-                <tr key={u.id} className="hover:bg-[#F6F7F9]/60">
+                <tr key={u.id} className="hover:bg-paper-white/60">
                   <td className="px-4 py-3.5">
-                    <p className="font-medium text-[#0A1A33]">
+                    <p className="font-medium text-indigo-depth">
                       {u.name}{' '}
-                      {isSelf && <span className="ml-1 text-[11px] text-[#515F73]">(You)</span>}
+                      {isSelf && <span className="ml-1 text-[11px] text-dilute-ink">(You)</span>}
                     </p>
-                    <p className="text-xs text-[#515F73]">{u.email}</p>
+                    <p className="text-xs text-dilute-ink">{u.email}</p>
                   </td>
                   <td className="px-4 py-3.5">
                     {isLockedSuperAdmin ? (
-                      <span className="inline-flex items-center gap-1.5 rounded border border-[#0A1A33] bg-[#0A1A33] px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-white">
+                      <span className="inline-flex items-center gap-1.5 rounded border border-indigo-depth bg-indigo-depth px-2.5 py-1 text-[11px] font-medium tracking-[0.1em] text-white">
                         <ShieldCheck className="h-3.5 w-3.5" />
                         SUPERADMIN (LOCKED)
                       </span>
@@ -379,7 +379,7 @@ export function AdminUsersSection({
                             action: () => onUpdateUserRole(u.id, nextRole),
                           });
                         }}
-                        className="rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-50"
+                        className="rounded border border-mist bg-paper-white px-2.5 py-1.5 text-xs font-medium text-indigo-depth disabled:opacity-50"
                       >
                         {ASSIGNABLE_ROLES.map((r) => (
                           <option key={r} value={r}>
@@ -391,11 +391,11 @@ export function AdminUsersSection({
                   </td>
                   <td className="px-4 py-3.5">
                     {u.active ? (
-                      <span className="rounded border border-[#A7F3D0] bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-[#065F46]">
+                      <span className="rounded border border-status-ok-border bg-status-ok-bg px-2.5 py-1 text-[11px] font-medium text-status-ok-text">
                         Active
                       </span>
                     ) : (
-                      <span className="rounded border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-medium text-[#991B1B]">
+                      <span className="rounded border border-status-danger-border bg-status-danger-bg px-2.5 py-1 text-[11px] font-medium text-status-danger-text">
                         Suspended
                       </span>
                     )}
@@ -406,7 +406,7 @@ export function AdminUsersSection({
                         type="button"
                         disabled={isSelf || isLockedSuperAdmin || isBusy}
                         onClick={() => void handleToggleActive(u.id)}
-                        className="inline-flex items-center gap-1 rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#0A1A33] hover:border-[#0A1A33] disabled:opacity-40"
+                        className="inline-flex items-center gap-1 rounded border border-mist bg-white px-2.5 py-1.5 text-[11px] font-medium text-indigo-depth hover:border-indigo-depth disabled:opacity-40"
                       >
                         {isBusy && <Loader2 className="h-3 w-3 animate-spin" />}
                         {u.active ? 'Suspend' : 'Reactivate'}
@@ -423,7 +423,7 @@ export function AdminUsersSection({
                             action: () => onDeleteUser(u.id),
                           })
                         }
-                        className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-40"
+                        className="rounded border border-mist p-1.5 text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:opacity-40"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

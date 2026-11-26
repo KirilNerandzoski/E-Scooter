@@ -83,12 +83,12 @@ export function AdminStationsSection({
       <form
         noValidate
         onSubmit={(e) => void handleCreateStation(e)}
-        className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-6"
+        className="grid gap-3 rounded-lg border border-mist bg-white p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-6"
       >
         <div>
           <label
             htmlFor="add-st-name"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             STATION NAME
           </label>
@@ -99,13 +99,13 @@ export function AdminStationsSection({
             value={newStationName}
             onChange={(e) => setNewStationName(e.target.value)}
             required
-            className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           />
         </div>
         <div>
           <label
             htmlFor="add-st-code"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             STATION CODE
           </label>
@@ -115,13 +115,13 @@ export function AdminStationsSection({
             placeholder="SKP-07"
             value={newStationCode}
             onChange={(e) => setNewStationCode(e.target.value)}
-            className="tabular-nums min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="tabular-nums min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           />
         </div>
         <div>
           <label
             htmlFor="add-st-district"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             DISTRICT
           </label>
@@ -131,13 +131,13 @@ export function AdminStationsSection({
             placeholder="Centar"
             value={newStationDistrict}
             onChange={(e) => setNewStationDistrict(e.target.value)}
-            className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           />
         </div>
         <div className="lg:col-span-2">
           <label
             htmlFor="add-st-address"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             STREET ADDRESS
           </label>
@@ -147,13 +147,13 @@ export function AdminStationsSection({
             placeholder="Boulevard & dock bay"
             value={newStationAddress}
             onChange={(e) => setNewStationAddress(e.target.value)}
-            className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           />
         </div>
         <div>
           <label
             htmlFor="add-st-capacity"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             CAPACITY (DOCKS)
           </label>
@@ -164,12 +164,12 @@ export function AdminStationsSection({
               min={2}
               value={newStationCapacity}
               onChange={(e) => setNewStationCapacity(Number(e.target.value))}
-              className="tabular-nums min-h-[42px] w-20 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-2 text-sm text-[#0A1A33]"
+              className="tabular-nums min-h-[42px] w-20 rounded border border-mist bg-paper-white px-2.5 py-2 text-sm text-indigo-depth"
             />
             <button
               type="submit"
               disabled={creating}
-              className="inline-flex min-h-[42px] flex-1 items-center justify-center gap-1 rounded bg-[#0A1A33] px-3 py-2 text-xs font-medium tracking-[0.12em] text-white hover:bg-[#1E2D4A] disabled:opacity-45"
+              className="inline-flex min-h-[42px] flex-1 items-center justify-center gap-1 rounded bg-indigo-depth px-3 py-2 text-xs font-medium tracking-[0.12em] text-white hover:bg-ink-current disabled:opacity-45"
             >
               {creating ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -190,13 +190,13 @@ export function AdminStationsSection({
           return (
             <div
               key={s.id}
-              className="flex items-start justify-between gap-3 rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5"
+              className="flex items-start justify-between gap-3 rounded-lg border border-mist bg-white p-4 sm:p-5"
             >
               {isEditing ? (
                 <div className="flex-1 space-y-2.5">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-[#515F73]">
+                      <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-dilute-ink">
                         CODE
                       </label>
                       <input
@@ -204,11 +204,11 @@ export function AdminStationsSection({
                         aria-label={`Edit code for ${s.name}`}
                         value={editStationCode}
                         onChange={(e) => setEditStationCode(e.target.value)}
-                        className="tabular-nums min-h-[38px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1 text-xs font-medium tracking-[0.1em] text-[#0A1A33]"
+                        className="tabular-nums min-h-[38px] w-full rounded border border-mist bg-paper-white px-2.5 py-1 text-xs font-medium tracking-[0.1em] text-indigo-depth"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-[#515F73]">
+                      <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-dilute-ink">
                         DISTRICT
                       </label>
                       <input
@@ -216,12 +216,12 @@ export function AdminStationsSection({
                         aria-label={`Edit district for ${s.name}`}
                         value={editStationDistrict}
                         onChange={(e) => setEditStationDistrict(e.target.value)}
-                        className="min-h-[38px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1 text-xs text-[#0A1A33]"
+                        className="min-h-[38px] w-full rounded border border-mist bg-paper-white px-2.5 py-1 text-xs text-indigo-depth"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-[#515F73]">
+                    <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-dilute-ink">
                       STATION NAME
                     </label>
                     <input
@@ -229,11 +229,11 @@ export function AdminStationsSection({
                       aria-label={`Edit name for ${s.name}`}
                       value={editStationName}
                       onChange={(e) => setEditStationName(e.target.value)}
-                      className="min-h-[38px] w-full rounded border border-[#0A1A33] bg-[#F6F7F9] px-2.5 py-1.5 text-sm font-medium text-[#0A1A33]"
+                      className="min-h-[38px] w-full rounded border border-indigo-depth bg-paper-white px-2.5 py-1.5 text-sm font-medium text-indigo-depth"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-[#515F73]">
+                    <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-dilute-ink">
                       STREET ADDRESS
                     </label>
                     <input
@@ -241,12 +241,12 @@ export function AdminStationsSection({
                       aria-label={`Edit address for ${s.name}`}
                       value={editStationAddress}
                       onChange={(e) => setEditStationAddress(e.target.value)}
-                      className="min-h-[38px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1.5 text-xs text-[#0A1A33]"
+                      className="min-h-[38px] w-full rounded border border-mist bg-paper-white px-2.5 py-1.5 text-xs text-indigo-depth"
                     />
                   </div>
                   <div className="flex flex-wrap items-end justify-between gap-2 pt-1">
                     <div>
-                      <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-[#515F73]">
+                      <label className="mb-1 block text-[10px] font-medium tracking-[0.12em] text-dilute-ink">
                         DOCKS
                       </label>
                       <input
@@ -255,7 +255,7 @@ export function AdminStationsSection({
                         min={2}
                         value={editStationCapacity}
                         onChange={(e) => setEditStationCapacity(Number(e.target.value))}
-                        className="tabular-nums min-h-[36px] w-20 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-2.5 py-1 text-xs text-[#0A1A33]"
+                        className="tabular-nums min-h-[36px] w-20 rounded border border-mist bg-paper-white px-2.5 py-1 text-xs text-indigo-depth"
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -263,7 +263,7 @@ export function AdminStationsSection({
                         type="button"
                         disabled={isSaving}
                         onClick={() => setEditingStationId(null)}
-                        className="min-h-[36px] rounded border border-[#DDE2E8] px-2.5 py-1.5 text-[11px] text-[#515F73] hover:text-[#0A1A33]"
+                        className="min-h-[36px] rounded border border-mist px-2.5 py-1.5 text-[11px] text-dilute-ink hover:text-indigo-depth"
                       >
                         Cancel
                       </button>
@@ -289,7 +289,7 @@ export function AdminStationsSection({
                             setSavingId(null);
                           }
                         }}
-                        className="inline-flex min-h-[36px] items-center gap-1 rounded bg-[#0A1A33] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#1E2D4A] disabled:opacity-50"
+                        className="inline-flex min-h-[36px] items-center gap-1 rounded bg-indigo-depth px-3 py-1.5 text-[11px] font-medium text-white hover:bg-ink-current disabled:opacity-50"
                       >
                         {isSaving ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -303,12 +303,12 @@ export function AdminStationsSection({
                 </div>
               ) : (
                 <div className="min-w-0">
-                  <span className="tabular-nums text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+                  <span className="tabular-nums text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
                     {s.code} · {s.district}
                   </span>
-                  <h3 className="mt-1 font-display text-xl text-[#0A1A33]">{s.name}</h3>
-                  <p className="mt-1 text-xs text-[#515F73]">{s.address}</p>
-                  <p className="tabular-nums mt-2 text-xs font-medium text-[#0A1A33]">
+                  <h2 className="mt-1 font-display text-xl text-indigo-depth">{s.name}</h2>
+                  <p className="mt-1 text-xs text-dilute-ink">{s.address}</p>
+                  <p className="tabular-nums mt-2 text-xs font-medium text-indigo-depth">
                     Capacity: {s.capacity} docks
                   </p>
                 </div>
@@ -327,7 +327,7 @@ export function AdminStationsSection({
                       setEditStationAddress(s.address);
                       setEditStationCapacity(s.capacity);
                     }}
-                    className="min-h-[36px] min-w-[36px] rounded border border-[#DDE2E8] p-2 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                    className="min-h-[36px] min-w-[36px] rounded border border-mist p-2 text-dilute-ink hover:border-indigo-depth hover:text-indigo-depth"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -343,7 +343,7 @@ export function AdminStationsSection({
                         action: () => onDeleteStation(s.id),
                       })
                     }
-                    className="min-h-[36px] min-w-[36px] rounded border border-[#DDE2E8] p-2 text-[#515F73] hover:border-[#822020] hover:text-[#822020]"
+                    className="min-h-[36px] min-w-[36px] rounded border border-mist p-2 text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

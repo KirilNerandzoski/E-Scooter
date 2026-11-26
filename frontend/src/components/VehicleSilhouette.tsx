@@ -14,8 +14,8 @@ export function VehicleSilhouette({
   inverted = false,
   className = 'h-10 w-16',
 }: VehicleSilhouetteProps) {
-  const stroke = inverted ? '#DCE6F5' : '#0A1A33';
-  const accent = inverted ? '#8CA6CC' : '#606D80';
+  const stroke = inverted ? 'var(--color-basin-soft)' : 'var(--color-indigo-depth)';
+  const accent = inverted ? 'var(--color-basin-tint)' : 'var(--color-dilute-ink)';
 
   if (kind === 'scooter') {
     return (

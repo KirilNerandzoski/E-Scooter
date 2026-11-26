@@ -17,6 +17,9 @@ interface AdminDashboardSectionProps {
   stations: Station[];
   reservations: Reservation[];
   monthlyRevenue: MonthlyRevenuePoint[];
+  onJumpToActiveRentals: () => void;
+  onJumpToMaintenanceVehicles: () => void;
+  onJumpToUsers?: () => void;
   onRequestConfirm: (confirm: PendingConfirm) => void;
   onResetSystemData: () => Promise<void> | void;
 }
@@ -29,6 +32,9 @@ export function AdminDashboardSection({
   stations,
   reservations,
   monthlyRevenue,
+  onJumpToActiveRentals,
+  onJumpToMaintenanceVehicles,
+  onJumpToUsers,
   onRequestConfirm,
   onResetSystemData,
 }: AdminDashboardSectionProps) {
@@ -92,56 +98,82 @@ export function AdminDashboardSection({
   return (
     <div className="mt-6 space-y-5 sm:mt-8 sm:space-y-6">
       <div className="grid gap-3 min-[380px]:grid-cols-2 sm:gap-4 lg:grid-cols-4">
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
-          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+        <div className="rounded-lg border border-mist bg-white p-4 sm:p-5">
+          <p className="text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
             LIFETIME SALES
           </p>
-          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-[#0A1A33] sm:mt-2 sm:text-2xl">
+          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-indigo-depth sm:mt-2 sm:text-2xl">
             {formatMkd(totalRevenueMkd)}
           </p>
-          <p className="tabular-nums mt-1 text-[11px] text-[#515F73]">
+          <p className="tabular-nums mt-1 text-[11px] text-dilute-ink">
             {completedRidesCount} completed {completedRidesCount === 1 ? 'ride' : 'rides'}
             {inProgressMkd > 0 ? ` · ${formatMkd(inProgressMkd)} pending` : ''}
           </p>
         </div>
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
-          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+        <button
+          type="button"
+          onClick={onJumpToActiveRentals}
+          className="rounded-lg border border-mist bg-surface-pure p-4 text-left transition-colors hover:border-indigo-depth sm:p-5"
+        >
+          <p className="text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
             ACTIVE RENTALS
           </p>
-          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-[#0A1A33] sm:mt-2 sm:text-2xl">
+          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-indigo-depth sm:mt-2 sm:text-2xl">
             {reservations.filter((r) => r.status === 'Active').length}
           </p>
-        </div>
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
-          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
-            REGISTERED USERS
-          </p>
-          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-[#0A1A33] sm:mt-2 sm:text-2xl">
-            {registeredUsersCount}
-          </p>
-        </div>
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-5">
-          <p className="text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+          <p className="mt-1 text-[11px] text-dilute-ink">View active bookings →</p>
+        </button>
+        {isSuperAdmin && onJumpToUsers ? (
+          <button
+            type="button"
+            onClick={onJumpToUsers}
+            className="rounded-lg border border-mist bg-surface-pure p-4 text-left transition-colors hover:border-indigo-depth sm:p-5"
+          >
+            <p className="text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
+              REGISTERED USERS
+            </p>
+            <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-indigo-depth sm:mt-2 sm:text-2xl">
+              {registeredUsersCount}
+            </p>
+            <p className="mt-1 text-[11px] text-dilute-ink">Manage accounts &amp; roles →</p>
+          </button>
+        ) : (
+          <div className="rounded-lg border border-mist bg-surface-pure p-4 sm:p-5">
+            <p className="text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
+              REGISTERED USERS
+            </p>
+            <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-indigo-depth sm:mt-2 sm:text-2xl">
+              {registeredUsersCount}
+            </p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onJumpToMaintenanceVehicles}
+          className="rounded-lg border border-mist bg-surface-pure p-4 text-left transition-colors hover:border-indigo-depth sm:p-5"
+        >
+          <p className="text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
             IN MAINTENANCE
           </p>
-          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-[#0A1A33] sm:mt-2 sm:text-2xl">
+          <p className="tabular-nums mt-1.5 font-display text-xl font-medium text-indigo-depth sm:mt-2 sm:text-2xl">
             {vehicles.filter((v) => v.inMaintenance).length}
           </p>
-        </div>
+          <p className="mt-1 text-[11px] text-dilute-ink">Filter in-service fleet →</p>
+        </button>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-5 lg:gap-6">
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-6 lg:col-span-3">
+        <div className="rounded-lg border border-mist bg-white p-4 sm:p-6 lg:col-span-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 className="font-display text-lg text-[#0A1A33] sm:text-xl">
+              <h2 className="font-display text-lg text-indigo-depth sm:text-xl">
                 Monthly Revenue (MKD)
               </h2>
-              <p className="mt-0.5 text-xs text-[#515F73]">
+              <p className="mt-0.5 text-xs text-dilute-ink">
                 Live lifetime sales added automatically when customer reservations are completed
               </p>
             </div>
-            <BarChart3 className="h-4 w-4 shrink-0 text-[#515F73]" />
+            <BarChart3 className="h-4 w-4 shrink-0 text-dilute-ink" />
           </div>
 
           <div className="mt-6 flex h-52 items-end gap-1.5 sm:mt-8 sm:h-56 sm:gap-3.5">
@@ -162,26 +194,26 @@ export function AdminDashboardSection({
                 >
                   <span
                     className={`tabular-nums text-[10px] font-medium sm:text-[11px] ${
-                      hasSales ? 'text-[#0A1A33]' : 'text-[#8C97A8]'
+                      hasSales ? 'text-indigo-depth' : 'text-dilute-ink'
                     }`}
                   >
                     {shortAmount}
                   </span>
-                  <div className="flex h-36 w-full items-end rounded-t bg-[#F6F7F9] sm:h-40">
+                  <div className="flex h-36 w-full items-end rounded-t bg-paper-white sm:h-40">
                     {hasSales ? (
                       <div
                         style={{ height: `${pct}%` }}
-                        className="w-full rounded-t bg-[#0A1A33] transition-all duration-300 hover:bg-[#1E2D4A]"
+                        className="w-full rounded-t bg-indigo-depth transition-all duration-300 hover:bg-ink-current"
                       />
                     ) : (
-                      <div className="h-[2px] w-full bg-[#DDE2E8]" />
+                      <div className="h-[2px] w-full bg-mist" />
                     )}
                   </div>
                   <div className="text-center">
-                    <span className="block truncate text-[11px] font-medium text-[#0A1A33] sm:text-xs">
+                    <span className="block truncate text-[11px] font-medium text-indigo-depth sm:text-xs">
                       {item.month}
                     </span>
-                    <span className="tabular-nums block text-[10px] text-[#515F73]">
+                    <span className="tabular-nums block text-[10px] text-dilute-ink">
                       {item.rides} {item.rides === 1 ? 'ride' : 'rides'}
                     </span>
                   </div>
@@ -191,18 +223,18 @@ export function AdminDashboardSection({
           </div>
         </div>
 
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-4 sm:p-6 lg:col-span-2">
-          <h2 className="font-display text-lg text-[#0A1A33] sm:text-xl">Most Popular Vehicles</h2>
-          <div className="mt-4 divide-y divide-[#DDE2E8] sm:mt-5">
+        <div className="rounded-lg border border-mist bg-white p-4 sm:p-6 lg:col-span-2">
+          <h2 className="font-display text-lg text-indigo-depth sm:text-xl">Most Popular Vehicles</h2>
+          <div className="mt-4 divide-y divide-mist sm:mt-5">
             {popularVehicles.map(({ vehicle, bookings }) => (
               <div key={vehicle.id} className="flex items-center justify-between gap-2 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#0A1A33]">{vehicle.name}</p>
-                  <p className="truncate text-xs text-[#515F73]">
+                  <p className="truncate text-sm font-medium text-indigo-depth">{vehicle.name}</p>
+                  <p className="truncate text-xs text-dilute-ink">
                     {vehicle.code} · {getStationName(vehicle.stationId)}
                   </p>
                 </div>
-                <span className="tabular-nums shrink-0 rounded bg-[#F6F7F9] px-2.5 py-1 text-xs font-semibold text-[#0A1A33]">
+                <span className="tabular-nums shrink-0 rounded bg-paper-white px-2.5 py-1 text-xs font-semibold text-indigo-depth">
                   {bookings} {bookings === 1 ? 'ride' : 'rides'}
                 </span>
               </div>
@@ -212,10 +244,10 @@ export function AdminDashboardSection({
       </div>
 
       {isSuperAdmin && (
-        <div className="flex flex-col gap-3 rounded-lg border border-[#DDE2E8] bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex flex-col gap-3 rounded-lg border border-mist bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <p className="text-sm font-medium text-[#0A1A33]">System Sync &amp; Tools</p>
-            <p className="text-xs text-[#515F73]">
+            <p className="text-sm font-medium text-indigo-depth">System Sync &amp; Tools</p>
+            <p className="text-xs text-dilute-ink">
               {apiLive
                 ? 'Refresh all fleet, station, reservation, and user tables directly from your live PostgreSQL database.'
                 : 'Restore initial local Skopje stations, fleet, sample reservations, and default accounts.'}
@@ -225,7 +257,7 @@ export function AdminDashboardSection({
             type="button"
             disabled={syncing}
             onClick={() => void handleSyncClick()}
-            className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1.5 rounded border border-[#0A1A33]/35 bg-[#F6F7F9] px-4 py-2 text-xs font-medium tracking-[0.12em] text-[#0A1A33] hover:bg-[#0A1A33] hover:text-white disabled:opacity-45"
+            className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1.5 rounded border border-indigo-depth/35 bg-paper-white px-4 py-2 text-xs font-medium tracking-[0.12em] text-indigo-depth hover:bg-indigo-depth hover:text-white disabled:opacity-45"
           >
             {syncing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

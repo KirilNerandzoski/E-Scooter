@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { LeftRail, type NavTab } from './components/LeftRail';
 import { RightTelemetry } from './components/RightTelemetry';
 import { ReservationModal } from './components/ReservationModal';
 import { ReturnModal, type ReturnSettlementResult } from './components/ReturnModal';
 import { AuthModal } from './components/AuthModal';
+import { HelpModal } from './components/HelpModal';
 import { HomePage } from './pages/HomePage';
 import { CatalogPage } from './pages/CatalogPage';
 import { StationsPage } from './pages/StationsPage';
@@ -175,11 +176,32 @@ export function App() {
   const [apiMonthlyRevenue, setApiMonthlyRevenue] = useState<MonthlyRevenuePoint[]>([]);
 
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
   const pendingBookingVehicleRef = useRef<Vehicle | null>(null);
   const [returningReservation, setReturningReservation] = useState<Reservation | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(null);
+  }, []);
+
+  const handleResetFiltersAndWindow = useCallback(() => {
+    stationDrilldownRef.current = false;
+    setFilterTypeId('');
+    setFilterStationId('');
+    const now = new Date();
+    const start = new Date(now.getTime() + 15 * 60 * 1000);
+    start.setSeconds(0, 0);
+    const end = new Date(start.getTime() + 4 * 60 * 60 * 1000);
+    setFilterStart(toLocalDateTimeInput(start));
+    setFilterEnd(toLocalDateTimeInput(end));
+  }, []);
 
   const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -1024,8 +1046,18 @@ export function App() {
         return false;
       }
     }
+    let passwordHash: string | undefined;
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(user.password)
+      );
+      passwordHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    }
     const created: UserAccount = {
       ...user,
+      password: '',
+      passwordHash,
       id: `usr-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
@@ -1126,13 +1158,72 @@ export function App() {
   const canSimulateLateReturn = !apiLive || hasPermission(currentUser, 'reservations:manage');
   const showTelemetry = activeTab !== 'admin' && activeTab !== 'my-rides';
 
+  useEffect(() => {
+    const onGlobalKeyDown = (e: KeyboardEvent) => {
+      if (authModalMode || bookingVehicle || returningReservation || helpOpen) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (e.key === '1') {
+          e.preventDefault();
+          setActiveTab('home');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          setActiveTab('catalog');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          setActiveTab('stations');
+        } else if (e.key === '4') {
+          e.preventDefault();
+          setActiveTab('my-rides');
+        } else if (e.key === '5' && isPrivileged) {
+          e.preventDefault();
+          setActiveTab('admin');
+        }
+        return;
+      }
+
+      if (!e.altKey && !e.ctrlKey && !e.metaKey && e.key === '?') {
+        e.preventDefault();
+        setHelpOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, [
+    authModalMode,
+    bookingVehicle,
+    returningReservation,
+    helpOpen,
+    isPrivileged,
+    setActiveTab,
+  ]);
+
   return (
-    <div className="washi-surface min-h-screen text-[#0A1A33]">
+    <div className="washi-surface min-h-screen text-indigo-depth">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded focus:bg-indigo-depth focus:px-4 focus:py-2 focus:text-xs focus:font-medium focus:tracking-[0.12em] focus:text-surface-pure"
+      >
+        SKIP TO MAIN CONTENT
+      </a>
+
       <LeftRail
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         currentUser={currentUser}
         onOpenAuth={(mode) => setAuthModalMode(mode)}
+        onOpenHelp={() => setHelpOpen(true)}
         onLogout={() => void handleLogout()}
         activeStationsCount={stations.length}
         freeFleetCount={freeNowCount}
@@ -1144,25 +1235,29 @@ export function App() {
           <div
             role="status"
             aria-live="polite"
-            className="flex items-center justify-center gap-2 border-b border-[#DDE2E8] bg-white/95 px-4 py-1.5 text-[11px] font-medium text-[#515F73] lg:hidden"
+            className="flex items-center justify-center gap-2 border-b border-mist bg-white/95 px-4 py-1.5 text-[11px] font-medium text-dilute-ink lg:hidden"
           >
-            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[#0A1A33]" />
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-indigo-depth" />
             <span>Connecting to Rydio server…</span>
           </div>
           <div
             role="status"
             aria-live="polite"
-            className={`fixed top-3 z-20 hidden items-center gap-2 rounded-full border border-[#DDE4EE] bg-white/95 px-3 py-1.5 text-[11px] font-medium text-[#5A6A82] shadow-sm backdrop-blur lg:flex ${
+            className={`fixed top-3 z-20 hidden items-center gap-2 rounded-full border border-mist bg-white/95 px-3 py-1.5 text-[11px] font-medium text-dilute-ink shadow-sm backdrop-blur lg:flex ${
               showTelemetry ? 'right-4 xl:right-[144px]' : 'right-4'
             }`}
           >
-            <Loader2 className="h-3 w-3 animate-spin text-[#0A1A33]" />
+            <Loader2 className="h-3 w-3 animate-spin text-indigo-depth" />
             Connecting to Rydio server…
           </div>
         </>
       )}
 
-      <main className={showTelemetry ? 'lg:pl-[196px] xl:pr-[128px]' : 'lg:pl-[196px]'}>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className={`focus:outline-none ${showTelemetry ? 'lg:pl-[196px] xl:pr-[128px]' : 'lg:pl-[196px]'}`}
+      >
         {activeTab === 'home' && (
           <HomePage
             vehicles={vehicles}
@@ -1179,6 +1274,7 @@ export function App() {
             onChangeEnd={setFilterEnd}
             onFindRides={() => setActiveTab('catalog')}
             onViewStations={() => setActiveTab('stations')}
+            onResetFilters={handleResetFiltersAndWindow}
             onSelectVehicle={(v) => setBookingVehicle(v)}
           />
         )}
@@ -1197,6 +1293,7 @@ export function App() {
             onChangeStation={handleManualStationChange}
             onChangeStart={setFilterStart}
             onChangeEnd={setFilterEnd}
+            onResetFilters={handleResetFiltersAndWindow}
             onSelectVehicle={(v) => setBookingVehicle(v)}
           />
         )}
@@ -1233,8 +1330,8 @@ export function App() {
         {activeTab === 'admin' && isPrivileged && currentUser && (
           <Suspense
             fallback={
-              <div className="flex min-h-[50vh] items-center justify-center px-6 py-20 text-xs font-medium tracking-[0.14em] text-[#515F73]">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin text-[#0A1A33]" />
+              <div className="flex min-h-[50vh] items-center justify-center px-6 py-20 text-xs font-medium tracking-[0.14em] text-dilute-ink">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin text-indigo-depth" />
                 LOADING OPERATIONS CONSOLE…
               </div>
             }
@@ -1273,10 +1370,10 @@ export function App() {
 
         {activeTab === 'admin' && (!isPrivileged || !currentUser) && (
           <div className="mx-auto max-w-[680px] px-4 py-16 text-center sm:px-6 sm:py-24">
-            <h1 className="font-display text-2xl font-light text-[#0A1A33]">
+            <h1 className="font-display text-2xl font-light text-indigo-depth">
               Restricted by Role-Based Access Control
             </h1>
-            <p className="mt-2 text-sm text-[#5A6A82]">
+            <p className="mt-2 text-sm text-dilute-ink">
               {currentUser
                 ? `Your account (${currentUser.email}) has the ${currentUser.role} role, which can browse the catalog and manage personal rides only. Website and fleet modifications are restricted.`
                 : 'Sign in with the SuperAdmin account to manage fleet vehicles, stations, reservations, and user roles.'}
@@ -1286,7 +1383,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setAuthModalMode('login')}
-                  className="min-h-[42px] rounded-md bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-[#13294B]"
+                  className="min-h-[42px] rounded-md bg-indigo-depth px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-white transition hover:bg-ink-current"
                 >
                   SIGN IN
                 </button>
@@ -1294,7 +1391,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('home')}
-                className="min-h-[42px] rounded-md border border-[#DDE4EE] bg-white px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-[#0A1A33] transition hover:border-[#0A1A33]"
+                className="min-h-[42px] rounded-md border border-mist bg-white px-5 py-2.5 text-xs font-medium tracking-[0.12em] text-indigo-depth transition hover:border-indigo-depth"
               >
                 BACK TO HOME
               </button>
@@ -1357,6 +1454,10 @@ export function App() {
         />
       )}
 
+      {helpOpen && (
+        <HelpModal canAccessAdmin={isPrivileged} onClose={() => setHelpOpen(false)} />
+      )}
+
       <div
         role={toast?.tone === 'error' ? 'alert' : 'status'}
         aria-live={toast?.tone === 'error' ? 'assertive' : 'polite'}
@@ -1367,18 +1468,26 @@ export function App() {
       >
         {toast && (
           <div
-            className={`rydio-toast-enter pointer-events-auto flex items-center gap-2.5 rounded-md border px-4 py-3 text-xs font-medium text-white shadow-xl ${
+            className={`rydio-toast-enter pointer-events-auto flex items-center gap-2.5 rounded-md border px-4 py-3 text-xs font-medium text-surface-pure shadow-xl ${
               toast.tone === 'error'
-                ? 'border-[#991B1B] bg-[#991B1B]'
-                : 'border-[#0A1A33] bg-[#0A1A33]'
+                ? 'border-status-danger-text bg-status-danger-text'
+                : 'border-indigo-depth bg-indigo-depth'
             }`}
           >
             {toast.tone === 'error' ? (
-              <AlertCircle className="h-4 w-4 shrink-0 text-white/90" />
+              <AlertCircle className="h-4 w-4 shrink-0 text-surface-pure/90" />
             ) : (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-[#C4D2E8]" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-basin-tint" />
             )}
-            <span className="break-words">{toast.message}</span>
+            <span className="flex-1 break-words">{toast.message}</span>
+            <button
+              type="button"
+              onClick={dismissToast}
+              aria-label="Dismiss notification"
+              className="ml-1 inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded text-surface-pure/80 hover:text-surface-pure"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
       </div>

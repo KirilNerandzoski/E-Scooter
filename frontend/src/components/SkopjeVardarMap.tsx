@@ -14,11 +14,11 @@ interface SkopjeVardarMapProps {
 }
 
 const STATION_COORDS: Record<string, { x: number; y: number }> = {
-  'st-karpos': { x: 185, y: 120 },
-  'st-park': { x: 318, y: 74 },
-  'st-debar': { x: 382, y: 162 },
-  'st-plostad': { x: 492, y: 184 },
-  'st-eastgate': { x: 642, y: 134 },
+  'st-karpos': { x: 185, y: 122 },
+  'st-park': { x: 318, y: 88 },
+  'st-debar': { x: 388, y: 162 },
+  'st-plostad': { x: 492, y: 186 },
+  'st-eastgate': { x: 642, y: 130 },
   'st-aerodrom': { x: 682, y: 236 },
 };
 
@@ -32,17 +32,17 @@ export function SkopjeVardarMap({
     items.find((x) => x.station.id === selectedStationId) ?? items[0] ?? null;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[#DDE2E8] bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DDE2E8] bg-[#F6F7F9] px-4 py-3 sm:px-5">
-        <span className="text-[11px] font-medium tracking-[0.14em] text-[#515F73]">
+    <div className="overflow-hidden rounded-lg border border-mist bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-mist bg-paper-white px-4 py-3 sm:px-5">
+        <span className="text-[11px] font-medium tracking-[0.14em] text-dilute-ink">
           SKOPJE · VARDAR RIVER CORRIDOR
         </span>
-        <span className="text-[11px] text-[#515F73]">
+        <span className="text-[11px] text-dilute-ink">
           Tap any station node to inspect availability
         </span>
       </div>
 
-      <div className="relative w-full bg-[#F6F7F9]/60 p-2.5 sm:p-4">
+      <div className="relative w-full bg-paper-white/60 p-2.5 sm:p-4">
         <svg
           viewBox="110 34 650 256"
           role="group"
@@ -57,7 +57,7 @@ export function SkopjeVardarMap({
               y1={y}
               x2="760"
               y2={y}
-              stroke="#DDE2E8"
+              stroke="var(--color-mist)"
               strokeWidth="0.8"
               strokeDasharray="3 5"
             />
@@ -69,41 +69,41 @@ export function SkopjeVardarMap({
               y1="34"
               x2={x}
               y2="290"
-              stroke="#DDE2E8"
+              stroke="var(--color-mist)"
               strokeWidth="0.8"
               strokeDasharray="3 5"
             />
           ))}
 
-          {/* Vardar River — flowing Suminagashi indigo current */}
+          {/* Vardar River — northern City Park meander + Gazi Baba / Aerodrom bend */}
           <path
-            d="M 100 146 C 175 120, 235 96, 330 122 C 425 146, 485 162, 575 182 C 660 201, 715 214, 770 242"
+            d="M 100 112 C 165 88, 245 44, 336 54 C 412 62, 468 150, 575 174 C 655 190, 715 204, 770 228"
             fill="none"
-            stroke="#0A1A33"
+            stroke="var(--color-indigo-depth)"
             strokeWidth="16"
             strokeLinecap="round"
             opacity="0.09"
           />
           <path
-            d="M 100 146 C 175 120, 235 96, 330 122 C 425 146, 485 162, 575 182 C 660 201, 715 214, 770 242"
+            d="M 100 112 C 165 88, 245 44, 336 54 C 412 62, 468 150, 575 174 C 655 190, 715 204, 770 228"
             fill="none"
-            stroke="#0A1A33"
+            stroke="var(--color-indigo-depth)"
             strokeWidth="2.2"
             strokeLinecap="round"
             opacity="0.42"
           />
           <path
-            d="M 100 152 C 175 126, 235 102, 330 128 C 425 152, 485 168, 575 188 C 660 207, 715 220, 770 248"
+            d="M 100 118 C 165 94, 245 50, 336 60 C 412 68, 468 156, 575 180 C 655 196, 715 210, 770 234"
             fill="none"
-            stroke="#606D80"
+            stroke="var(--color-dilute-ink)"
             strokeWidth="1"
             strokeLinecap="round"
             opacity="0.35"
           />
           <text
-            x="130"
-            y="66"
-            fill="#515F73"
+            x="126"
+            y="58"
+            fill="var(--color-dilute-ink)"
             fontSize="11"
             letterSpacing="0.2em"
             fontFamily="Manrope, sans-serif"
@@ -111,11 +111,11 @@ export function SkopjeVardarMap({
             VARDAR RIVER
           </text>
 
-          {/* Subtle connecting mobility corridor lines */}
+          {/* Subtle connecting mobility corridor lines (south-bank bikeway + East Gate crossing) */}
           <path
-            d="M 185 120 L 318 74 L 382 162 L 492 184 L 642 134 M 492 184 L 682 236"
+            d="M 185 122 L 318 88 L 388 162 L 492 186 L 682 236 M 492 186 L 642 130"
             fill="none"
-            stroke="#8C97A8"
+            stroke="var(--color-feathered-gray)"
             strokeWidth="1"
             strokeDasharray="4 4"
             opacity="0.65"
@@ -151,22 +151,22 @@ export function SkopjeVardarMap({
                 <circle
                   r="24"
                   fill="none"
-                  stroke="#0A1A33"
+                  stroke="var(--color-indigo-depth)"
                   strokeWidth="2"
                   strokeDasharray="3 2"
                   className="focus-ring opacity-0 transition-opacity"
                 />
-                {isSelected && <circle r="21" fill="#0A1A33" opacity="0.12" />}
+                {isSelected && <circle r="21" fill="var(--color-indigo-depth)" opacity="0.12" />}
                 <circle
                   r={isSelected ? '13' : '10.5'}
-                  fill={isSelected ? '#0A1A33' : '#FFFFFF'}
-                  stroke="#0A1A33"
+                  fill={isSelected ? 'var(--color-indigo-depth)' : 'var(--color-surface-pure)'}
+                  stroke="var(--color-indigo-depth)"
                   strokeWidth="2"
                 />
                 <text
                   y="4"
                   textAnchor="middle"
-                  fill={isSelected ? '#FFFFFF' : '#0A1A33'}
+                  fill={isSelected ? 'var(--color-surface-pure)' : 'var(--color-indigo-depth)'}
                   fontSize="11"
                   fontWeight="600"
                   fontFamily="Manrope, sans-serif"
@@ -178,7 +178,7 @@ export function SkopjeVardarMap({
                 <g transform="translate(0, 27)">
                   <text
                     textAnchor="middle"
-                    fill="#0A1A33"
+                    fill="var(--color-indigo-depth)"
                     fontSize="12"
                     fontWeight={isSelected ? '600' : '500'}
                     fontFamily="Manrope, sans-serif"
@@ -188,7 +188,7 @@ export function SkopjeVardarMap({
                   <text
                     y="14"
                     textAnchor="middle"
-                    fill="#515F73"
+                    fill="var(--color-dilute-ink)"
                     fontSize="10.5"
                     letterSpacing="0.08em"
                     fontFamily="Manrope, sans-serif"
@@ -204,21 +204,21 @@ export function SkopjeVardarMap({
 
       {/* Selected Station Callout Strip (effortless thumb interaction on mobile & desktop) */}
       {selectedItem && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#DDE2E8] bg-white px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mist bg-white px-4 py-3 sm:px-5">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="tabular-nums rounded bg-[#F6F7F9] px-2 py-0.5 text-[11px] font-semibold tracking-[0.1em] text-[#0A1A33]">
+              <span className="tabular-nums rounded bg-paper-white px-2 py-0.5 text-[11px] font-semibold tracking-[0.1em] text-indigo-depth">
                 {selectedItem.station.code}
               </span>
-              <span className="text-sm font-medium text-[#0A1A33]">
+              <span className="text-sm font-medium text-indigo-depth">
                 {selectedItem.station.name}
               </span>
-              <span className="tabular-nums text-xs font-semibold text-[#0A1A33]">
+              <span className="tabular-nums text-xs font-semibold text-indigo-depth">
                 · {selectedItem.freeCount} free / {selectedItem.station.capacity} docks
               </span>
             </div>
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-[#515F73]">
-              <MapPin className="h-3 w-3 shrink-0 text-[#0A1A33]" />
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-dilute-ink">
+              <MapPin className="h-3 w-3 shrink-0 text-indigo-depth" />
               <span className="truncate">{selectedItem.station.address}</span>
             </p>
           </div>
@@ -226,7 +226,7 @@ export function SkopjeVardarMap({
             <button
               type="button"
               onClick={() => onBrowseStation(selectedItem.station.id)}
-              className="inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded bg-[#0A1A33] px-3.5 py-2 text-xs font-medium tracking-[0.12em] text-white transition-colors hover:bg-[#1E2D4A] sm:w-auto"
+              className="inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded bg-indigo-depth px-3.5 py-2 text-xs font-medium tracking-[0.12em] text-white transition-colors hover:bg-ink-current sm:w-auto"
             >
               BROWSE STATION
               <ArrowRight className="h-3.5 w-3.5" />

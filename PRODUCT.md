@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-.NET 10 Web API (ASP.NET Core + EF Core + Npgsql PostgreSQL) hosted on Render, with a React (Vite + TypeScript + Tailwind CSS) frontend hosted on GitHub Pages.
+.NET 10 Web API (ASP.NET Core + EF Core + Npgsql PostgreSQL) serving the compiled React (Vite + TypeScript + Tailwind CSS v4) SPA from `wwwroot/` in a single Docker container on Render.
 
 ## Users
 
@@ -42,7 +42,7 @@ Time-window-first urban micro-mobility reservation platform with station-to-stat
 ## Brand Commitments
 
 - **Brand Name:** Rydio (`RYDIO`).
-- **Visual World:** Suminagashi Ink Basin (`medium-native-fluid-ink-basin`) — paper-white surface (`#F6F7F9`), deep indigo ink (`#0A1A33`), dilute slate (`#606D80`), hairline mist rules (`#DDE2E8`), and delicate flowing ink-current marbling echoing the Vardar River.
+- **Visual World:** Suminagashi Ink Basin (`medium-native-fluid-ink-basin`) — paper-white surface (`#F6F7F9`), deep indigo ink (`#0A1A33`), dilute slate (`#515F73`), hairline mist rules (`#DDE2E8`), and delicate flowing ink-current marbling echoing the Vardar River.
 
 ## Evidence on Hand
 

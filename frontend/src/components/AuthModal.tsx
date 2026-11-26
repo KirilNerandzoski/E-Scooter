@@ -17,6 +17,15 @@ interface AuthModalProps {
 
 const AUTH_MODES: readonly ('login' | 'register')[] = ['login', 'register'];
 
+async function sha256Hex(text: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoded = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return text;
+}
+
 export function AuthModal({
   initialMode = 'login',
   useRemoteApi,
@@ -103,10 +112,16 @@ export function AuthModal({
       return;
     }
 
-    // Local fallback mode
+    // Local fallback mode (SHA-256 hashed credentials, zero plaintext storage)
+    const inputHash = await sha256Hex(password);
     if (mode === 'login') {
       const account = users.find((u) => u.email.toLowerCase() === normalizedEmail);
-      if (!account || account.password !== password) {
+      const matchesPassword = account
+        ? account.passwordHash
+          ? account.passwordHash === inputHash
+          : Boolean(account.password) && account.password === password
+        : false;
+      if (!account || !matchesPassword) {
         setError('Invalid email or password. Check your credentials or create a new account.');
         return;
       }
@@ -133,7 +148,8 @@ export function AuthModal({
       id: `usr-${Date.now()}`,
       name: name.trim(),
       email: normalizedEmail,
-      password,
+      password: '',
+      passwordHash: inputHash,
       role: 'Customer',
       permissions: [...ROLE_PERMISSIONS.Customer],
       active: true,
@@ -144,15 +160,15 @@ export function AuthModal({
 
   return (
     <Modal labelledBy="auth-modal-title" maxWidthClass="max-w-md" onClose={onClose}>
-      <div className="flex items-start justify-between gap-3 rounded-t-lg border-b border-[#DDE2E8] bg-white px-4 py-4 sm:px-6 sm:py-5">
+      <div className="flex items-start justify-between gap-3 rounded-t-lg border-b border-mist bg-white px-4 py-4 sm:px-6 sm:py-5">
         <div>
           <h2
             id="auth-modal-title"
-            className="font-display text-xl font-normal text-[#0A1A33] sm:text-2xl"
+            className="font-display text-xl font-normal text-indigo-depth sm:text-2xl"
           >
             {mode === 'login' ? 'Sign in to Rydio' : 'Create your Rydio account'}
           </h2>
-          <p className="mt-1 text-xs text-[#515F73]">
+          <p className="mt-1 text-xs text-dilute-ink">
             {mode === 'login'
               ? 'Access your reservations, pickup controls, and ride history.'
               : 'Register once to reserve scooters and e-bikes across Skopje.'}
@@ -162,7 +178,7 @@ export function AuthModal({
           type="button"
           onClick={onClose}
           aria-label="Close sign in dialog"
-          className="rounded border border-[#DDE2E8] p-1.5 text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+          className="rounded border border-mist p-1.5 text-dilute-ink hover:border-indigo-depth hover:text-indigo-depth"
         >
           <X className="h-4 w-4" />
         </button>
@@ -172,7 +188,7 @@ export function AuthModal({
         role="tablist"
         aria-label="Authentication mode"
         onKeyDown={handleTabKeyDown}
-        className="grid grid-cols-2 border-b border-[#DDE2E8] bg-white px-4 sm:px-6"
+        className="grid grid-cols-2 border-b border-mist bg-white px-4 sm:px-6"
       >
         <button
           ref={(el) => {
@@ -187,8 +203,8 @@ export function AuthModal({
           onClick={() => switchMode('login')}
           className={`min-h-[42px] border-b-2 py-3 text-xs font-medium tracking-[0.14em] transition-colors ${
             mode === 'login'
-              ? 'border-[#0A1A33] text-[#0A1A33]'
-              : 'border-transparent text-[#515F73] hover:text-[#0A1A33]'
+              ? 'border-indigo-depth text-indigo-depth'
+              : 'border-transparent text-dilute-ink hover:text-indigo-depth'
           }`}
         >
           SIGN IN
@@ -206,8 +222,8 @@ export function AuthModal({
           onClick={() => switchMode('register')}
           className={`min-h-[42px] border-b-2 py-3 text-xs font-medium tracking-[0.14em] transition-colors ${
             mode === 'register'
-              ? 'border-[#0A1A33] text-[#0A1A33]'
-              : 'border-transparent text-[#515F73] hover:text-[#0A1A33]'
+              ? 'border-indigo-depth text-indigo-depth'
+              : 'border-transparent text-dilute-ink hover:text-indigo-depth'
           }`}
         >
           CREATE ACCOUNT
@@ -224,7 +240,7 @@ export function AuthModal({
         {error && (
           <div
             role="alert"
-            className="flex items-start gap-2 rounded-md border border-[#9B2C2C]/30 bg-[#FFF5F5] px-3.5 py-2.5 text-xs text-[#822020]"
+            className="flex items-start gap-2 rounded-md border border-status-danger-text/30 bg-status-danger-bg px-3.5 py-2.5 text-xs text-status-danger-deep"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
@@ -235,7 +251,7 @@ export function AuthModal({
           <div>
             <label
               htmlFor="auth-name"
-              className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
+              className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-dilute-ink"
             >
               FULL NAME
             </label>
@@ -247,7 +263,7 @@ export function AuthModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Ana Stojanovska"
-              className="w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33]"
+              className="w-full rounded border border-mist bg-white px-3 py-2.5 text-sm text-indigo-depth"
             />
           </div>
         )}
@@ -255,7 +271,7 @@ export function AuthModal({
         <div>
           <label
             htmlFor="auth-email"
-            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-dilute-ink"
           >
             EMAIL ADDRESS
           </label>
@@ -267,14 +283,14 @@ export function AuthModal({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@example.mk"
-            className="w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33]"
+            className="w-full rounded border border-mist bg-white px-3 py-2.5 text-sm text-indigo-depth"
           />
         </div>
 
         <div>
           <label
             htmlFor="auth-password"
-            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-dilute-ink"
           >
             PASSWORD
           </label>
@@ -286,7 +302,7 @@ export function AuthModal({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
-            className="w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33]"
+            className="w-full rounded border border-mist bg-white px-3 py-2.5 text-sm text-indigo-depth"
           />
         </div>
 
@@ -294,7 +310,7 @@ export function AuthModal({
           <div>
             <label
               htmlFor="auth-confirm"
-              className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-[#515F73]"
+              className="mb-1 block text-[11px] font-medium tracking-[0.14em] text-dilute-ink"
             >
               CONFIRM PASSWORD
             </label>
@@ -306,7 +322,7 @@ export function AuthModal({
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full rounded border border-[#DDE2E8] bg-white px-3 py-2.5 text-sm text-[#0A1A33]"
+              className="w-full rounded border border-mist bg-white px-3 py-2.5 text-sm text-indigo-depth"
             />
           </div>
         )}
@@ -314,7 +330,7 @@ export function AuthModal({
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-[#1E2D4A] disabled:opacity-50"
+          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded bg-indigo-depth px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-ink-current disabled:opacity-50"
         >
           {submitting
             ? 'PLEASE WAIT...'

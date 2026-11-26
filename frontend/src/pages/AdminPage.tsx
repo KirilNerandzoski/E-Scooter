@@ -13,7 +13,7 @@ import type {
 import { hasPermission, isPrimarySuperAdmin } from '../utils/rbac';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { AdminDashboardSection } from './admin/AdminDashboardSection';
-import { AdminVehiclesSection } from './admin/AdminVehiclesSection';
+import { AdminVehiclesSection, type VehicleStatusFilter } from './admin/AdminVehiclesSection';
 import { AdminTypesSection } from './admin/AdminTypesSection';
 import { AdminStationsSection } from './admin/AdminStationsSection';
 import { AdminReservationsSection } from './admin/AdminReservationsSection';
@@ -85,6 +85,8 @@ export function AdminPage({
     isPrimarySuperAdmin(currentUser) && hasPermission(currentUser, 'users:manage');
   const canDeleteReservations = hasPermission(currentUser, 'reservations:delete');
   const [section, setSection] = useState<AdminSection>('dashboard');
+  const [vehInitialFilter, setVehInitialFilter] = useState<VehicleStatusFilter>('ALL');
+  const [resInitialFilter, setResInitialFilter] = useState<ReservationStatus | 'ALL'>('ALL');
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const tabRefs = useRef<Partial<Record<AdminSection, HTMLButtonElement | null>>>({});
 
@@ -119,20 +121,20 @@ export function AdminPage({
 
   return (
     <div className="mx-auto max-w-[1120px] px-4 py-6 sm:px-8 sm:py-10 lg:px-10">
-      <div className="flex flex-col gap-4 border-b border-[#DDE2E8] pb-5 lg:flex-row lg:items-end lg:justify-between lg:pb-6">
+      <div className="flex flex-col gap-4 border-b border-mist pb-5 lg:flex-row lg:items-end lg:justify-between lg:pb-6">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="font-display text-[1.75rem] font-light tracking-[-0.02em] text-[#0A1A33] sm:text-4xl">
+            <h1 className="font-display text-[1.75rem] font-light tracking-[-0.02em] text-indigo-depth sm:text-4xl">
               {isSuperAdmin ? 'SuperAdmin Control Center' : 'Fleet Administration'}
             </h1>
             {isSuperAdmin && (
-              <span className="inline-flex items-center gap-1 rounded bg-[#0A1A33] px-2.5 py-1 text-[11px] font-medium tracking-[0.12em] text-white">
+              <span className="inline-flex items-center gap-1 rounded bg-indigo-depth px-2.5 py-1 text-[11px] font-medium tracking-[0.12em] text-white">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 FULL ACCESS
               </span>
             )}
           </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#515F73]">
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-dilute-ink">
             {isSuperAdmin
               ? 'Unrestricted control over fleet, stations, vehicle types, all reservations, user accounts, roles, and system state.'
               : 'Manage Skopje vehicles, types, stations, maintenance states, and revenue analytics.'}
@@ -163,8 +165,8 @@ export function AdminPage({
                 onClick={() => setSection(id)}
                 className={`min-h-[40px] rounded px-3 py-2 text-xs font-medium tracking-[0.06em] transition-colors sm:px-3.5 sm:tracking-[0.08em] ${
                   isSelected
-                    ? 'bg-[#0A1A33] text-white'
-                    : 'border border-[#DDE2E8] bg-white text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]'
+                    ? 'bg-indigo-depth text-white'
+                    : 'border border-mist bg-white text-dilute-ink hover:border-indigo-depth hover:text-indigo-depth'
                 }`}
               >
                 {label}
@@ -188,6 +190,15 @@ export function AdminPage({
             stations={stations}
             reservations={reservations}
             monthlyRevenue={monthlyRevenue}
+            onJumpToActiveRentals={() => {
+              setResInitialFilter('Active');
+              setSection('reservations');
+            }}
+            onJumpToMaintenanceVehicles={() => {
+              setVehInitialFilter('SERVICE');
+              setSection('vehicles');
+            }}
+            onJumpToUsers={isSuperAdmin ? () => setSection('users') : undefined}
             onRequestConfirm={setPendingConfirm}
             onResetSystemData={onResetSystemData}
           />
@@ -195,9 +206,11 @@ export function AdminPage({
 
         {section === 'vehicles' && (
           <AdminVehiclesSection
+            key={`veh-${vehInitialFilter}`}
             vehicles={vehicles}
             vehicleTypes={vehicleTypes}
             stations={stations}
+            initialStatusFilter={vehInitialFilter}
             onShowError={onShowError}
             onRequestConfirm={setPendingConfirm}
             onToggleMaintenance={onToggleMaintenance}
@@ -231,9 +244,11 @@ export function AdminPage({
 
         {section === 'reservations' && (
           <AdminReservationsSection
+            key={`res-${resInitialFilter}`}
             reservations={reservations}
             vehicles={vehicles}
             stations={stations}
+            initialStatusFilter={resInitialFilter}
             canDeleteReservations={canDeleteReservations}
             onRequestConfirm={setPendingConfirm}
             onAdminSetReservationStatus={onAdminSetReservationStatus}

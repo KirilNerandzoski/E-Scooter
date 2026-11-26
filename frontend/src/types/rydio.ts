@@ -19,6 +19,7 @@ export interface UserAccount {
   name: string;
   email: string;
   password: string;
+  passwordHash?: string;
   role: AccountRole;
   permissions?: RbacPermission[];
   active: boolean;

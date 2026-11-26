@@ -54,11 +54,11 @@ export function MyRidesPage({
   if (!currentUser) {
     return (
       <div className="mx-auto max-w-[960px] px-4 py-12 sm:px-8 sm:py-16">
-        <div className="rounded-lg border border-[#DDE2E8] bg-white p-6 text-center sm:p-10">
-          <h1 className="font-display text-2xl font-light text-[#0A1A33] sm:text-3xl">
+        <div className="rounded-lg border border-mist bg-white p-6 text-center sm:p-10">
+          <h1 className="font-display text-2xl font-light text-indigo-depth sm:text-3xl">
             My Reservations
           </h1>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#515F73]">
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-dilute-ink">
             Sign in or create an account to reserve vehicles, pick up rides, return to Skopje
             stations, and manage your booking history.
           </p>
@@ -66,14 +66,14 @@ export function MyRidesPage({
             <button
               type="button"
               onClick={() => onOpenAuth('login')}
-              className="min-h-[44px] rounded bg-[#0A1A33] px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-[#1E2D4A]"
+              className="min-h-[44px] rounded bg-indigo-depth px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-white transition-colors hover:bg-ink-current"
             >
               SIGN IN
             </button>
             <button
               type="button"
               onClick={() => onOpenAuth('register')}
-              className="min-h-[44px] rounded border border-[#0A1A33]/35 bg-white px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-[#0A1A33] transition-colors hover:border-[#0A1A33]"
+              className="min-h-[44px] rounded border border-indigo-depth/35 bg-white px-5 py-2.5 text-xs font-medium tracking-[0.16em] text-indigo-depth transition-colors hover:border-indigo-depth"
             >
               CREATE ACCOUNT
             </button>
@@ -117,12 +117,12 @@ export function MyRidesPage({
 
   return (
     <div className="mx-auto max-w-[1120px] px-4 py-6 sm:px-8 sm:py-10 lg:px-10">
-      <div className="border-b border-[#DDE2E8] pb-5 sm:pb-6">
-        <h1 className="font-display text-[1.75rem] font-light tracking-[-0.02em] text-[#0A1A33] sm:text-4xl">
+      <div className="border-b border-mist pb-5 sm:pb-6">
+        <h1 className="font-display text-[1.75rem] font-light tracking-[-0.02em] text-indigo-depth sm:text-4xl">
           My Reservations &amp; Rides
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-[#515F73]">
-          Signed in as <strong className="text-[#0A1A33]">{currentUser.name}</strong> (
+        <p className="mt-2 text-sm leading-relaxed text-dilute-ink">
+          Signed in as <strong className="text-indigo-depth">{currentUser.name}</strong> (
           {currentUser.email}). Pick up bookings starting 30 minutes before start time, return
           active rides to any Skopje station, or cancel up to 1 hour before start.
         </p>
@@ -131,7 +131,7 @@ export function MyRidesPage({
       {/* Active Ride Banner */}
       {activeRides.length > 0 && (
         <section aria-label="Active rides" className="mt-7 space-y-4 sm:mt-8">
-          <h2 className="text-xs font-medium tracking-[0.16em] text-[#515F73]">ACTIVE RIGHT NOW</h2>
+          <h2 className="text-xs font-medium tracking-[0.16em] text-dilute-ink">ACTIVE RIGHT NOW</h2>
           {activeRides.map((res) => {
             const isOverdue = new Date(res.endTime).getTime() < nowMs;
             const canReturn = Boolean(
@@ -144,21 +144,21 @@ export function MyRidesPage({
               >
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[#10B981]/25 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.14em] text-[#A7F3D0]">
+                    <span className="rounded-full bg-status-ok-dot/25 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.14em] text-status-ok-border">
                       ACTIVE RIDE
                     </span>
                     {isOverdue && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#EF4444]/25 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.12em] text-[#FECACA]">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-status-danger-dot/25 px-2.5 py-0.5 text-[11px] font-medium tracking-[0.12em] text-status-danger-border">
                         <AlertTriangle className="h-3 w-3 shrink-0" />
                         OVERDUE (1.5× PENALTY)
                       </span>
                     )}
-                    <span className="tabular-nums text-xs text-[#C4D2E8]">{res.id}</span>
+                    <span className="tabular-nums text-xs text-basin-tint">{res.id}</span>
                   </div>
                   <h3 className="font-display text-xl font-normal text-white sm:text-2xl">
                     {getVehicleName(res)}
                   </h3>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#C4D2E8]">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-basin-tint">
                     <span className="inline-flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 shrink-0" />
                       Picked up at {getStationName(res.pickupStationId)}
@@ -175,13 +175,13 @@ export function MyRidesPage({
                     <p className="tabular-nums font-display text-xl text-white">
                       {formatMkd(res.totalPriceMkd)}
                     </p>
-                    <p className="text-[11px] text-[#C4D2E8]">Base fare</p>
+                    <p className="text-[11px] text-basin-tint">Base fare</p>
                   </div>
                   <button
                     type="button"
                     disabled={!canReturn}
                     onClick={() => onOpenReturn(res)}
-                    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded bg-white px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-[#0A1A33] transition-colors hover:bg-[#E6EEF8] disabled:opacity-45"
+                    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded bg-white px-4 py-2.5 text-xs font-medium tracking-[0.14em] text-indigo-depth transition-colors hover:bg-basin-soft disabled:opacity-45"
                   >
                     <CornerDownLeft className="h-3.5 w-3.5" />
                     RETURN VEHICLE
@@ -195,17 +195,17 @@ export function MyRidesPage({
 
       {/* Upcoming Reservations */}
       <section aria-label="Upcoming reservations" className="mt-8 sm:mt-10">
-        <h2 className="text-xs font-medium tracking-[0.16em] text-[#515F73]">
+        <h2 className="text-xs font-medium tracking-[0.16em] text-dilute-ink">
           UPCOMING RESERVATIONS ({upcomingRides.length})
         </h2>
         <div className="mt-4 space-y-3">
           {upcomingRides.length === 0 ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-[#DDE2E8] bg-white p-5 text-sm text-[#515F73] sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div className="flex flex-col gap-3 rounded-lg border border-mist bg-white p-5 text-sm text-dilute-ink sm:flex-row sm:items-center sm:justify-between sm:p-6">
               <span>You have no upcoming reservations yet.</span>
               <button
                 type="button"
                 onClick={onBrowseCatalog}
-                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded bg-[#0A1A33] px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-[#1E2D4A]"
+                className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded bg-indigo-depth px-4 py-2 text-xs font-medium tracking-[0.14em] text-white hover:bg-ink-current"
               >
                 BROWSE CATALOG
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -226,39 +226,39 @@ export function MyRidesPage({
               return (
                 <div
                   key={res.id}
-                  className="flex flex-col justify-between gap-4 rounded-lg border border-[#DDE2E8] bg-white p-4 sm:flex-row sm:items-center sm:p-5"
+                  className="flex flex-col justify-between gap-4 rounded-lg border border-mist bg-white p-4 sm:flex-row sm:items-center sm:p-5"
                 >
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="tabular-nums text-xs font-medium text-[#0A1A33]">
+                      <span className="tabular-nums text-xs font-medium text-indigo-depth">
                         {res.id}
                       </span>
-                      <span className="rounded border border-[#FDE68A] bg-[#FFFBEB] px-2 py-0.5 text-[11px] font-medium tracking-[0.12em] text-[#92400E]">
+                      <span className="rounded border border-status-warn-border bg-status-warn-bg px-2 py-0.5 text-[11px] font-medium tracking-[0.12em] text-status-warn-text">
                         RESERVED
                       </span>
                     </div>
-                    <h3 className="font-display text-xl text-[#0A1A33]">{getVehicleName(res)}</h3>
-                    <p className="tabular-nums text-xs text-[#515F73]">
+                    <h3 className="font-display text-xl text-indigo-depth">{getVehicleName(res)}</h3>
+                    <p className="tabular-nums text-xs text-dilute-ink">
                       {formatShortDateTime(res.startTime)} → {formatShortDateTime(res.endTime)} ·{' '}
                       {getStationName(res.pickupStationId)}
                     </p>
                     {res.discountAppliedMkd > 0 && (
-                      <p className="tabular-nums text-[11px] font-medium text-[#0A1A33]">
+                      <p className="tabular-nums text-[11px] font-medium text-indigo-depth">
                         Full-day rate cap applied (−{formatMkd(res.discountAppliedMkd)})
                       </p>
                     )}
                     {!pickupCheck.canPickUp && pickupCheck.reason && (
-                      <p className="text-[11px] text-[#515F73]">{pickupCheck.reason}</p>
+                      <p className="text-[11px] text-dilute-ink">{pickupCheck.reason}</p>
                     )}
                     {!cancellable && (
-                      <p className="text-[11px] text-[#822020]">
+                      <p className="text-[11px] text-status-danger-deep">
                         Cancellation closed (less than 1 hour before pickup).
                       </p>
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-[#DDE2E8] pt-3.5 sm:justify-end sm:gap-3 sm:border-t-0 sm:pt-0">
-                    <span className="tabular-nums font-display text-xl font-medium text-[#0A1A33] sm:mr-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-mist pt-3.5 sm:justify-end sm:gap-3 sm:border-t-0 sm:pt-0">
+                    <span className="tabular-nums font-display text-xl font-medium text-indigo-depth sm:mr-2">
                       {formatMkd(res.totalPriceMkd)}
                     </span>
                     <div className="flex items-center gap-2">
@@ -267,7 +267,7 @@ export function MyRidesPage({
                         disabled={!pickupCheck.canPickUp || Boolean(busyAction)}
                         title={pickupCheck.reason ?? 'Pick up vehicle'}
                         onClick={() => void handlePickUpClick(res.id)}
-                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded bg-[#0A1A33] px-3.5 py-2 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-[#1E2D4A] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded bg-indigo-depth px-3.5 py-2 text-xs font-medium tracking-[0.14em] text-white transition-colors hover:bg-ink-current disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {isPickingUp ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -280,7 +280,7 @@ export function MyRidesPage({
                         type="button"
                         disabled={!cancellable || Boolean(busyAction)}
                         onClick={() => setConfirmCancelId(res.id)}
-                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded border border-[#DDE2E8] bg-white px-3.5 py-2 text-xs font-medium tracking-[0.12em] text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded border border-mist bg-white px-3.5 py-2 text-xs font-medium tracking-[0.12em] text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {isCancelling ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -300,14 +300,14 @@ export function MyRidesPage({
 
       {/* Past History */}
       <section aria-label="Past ride history" className="mt-8 sm:mt-10">
-        <h2 className="text-xs font-medium tracking-[0.16em] text-[#515F73]">
+        <h2 className="text-xs font-medium tracking-[0.16em] text-dilute-ink">
           PAST HISTORY ({pastRides.length})
         </h2>
-        <div className="mt-4 overflow-hidden rounded-lg border border-[#DDE2E8] bg-white">
+        <div className="mt-4 overflow-hidden rounded-lg border border-mist bg-white">
           {pastRides.length === 0 ? (
-            <p className="p-6 text-sm text-[#515F73]">No completed or cancelled trips yet.</p>
+            <p className="p-6 text-sm text-dilute-ink">No completed or cancelled trips yet.</p>
           ) : (
-            <div className="divide-y divide-[#DDE2E8]">
+            <div className="divide-y divide-mist">
               {pastRides.map((res) => {
                 const isCancelled = res.status === 'Cancelled';
                 return (
@@ -317,22 +317,22 @@ export function MyRidesPage({
                   >
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-[#0A1A33]">
+                        <span className="text-sm font-medium text-indigo-depth">
                           {getVehicleName(res)}
                         </span>
-                        <span className="tabular-nums text-xs text-[#515F73]">{res.id}</span>
+                        <span className="tabular-nums text-xs text-dilute-ink">{res.id}</span>
                         <span
                           className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium tracking-[0.1em] ${
                             isCancelled
-                              ? 'border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]'
-                              : 'border-[#CBD5E1] bg-[#F1F5F9] text-[#334155]'
+                              ? 'border-status-danger-border bg-status-danger-bg text-status-danger-text'
+                              : 'border-status-neutral-border bg-status-neutral-bg text-status-neutral-text'
                           }`}
                         >
                           {!isCancelled && <CheckCircle2 className="h-3 w-3" />}
                           {res.status.toUpperCase()}
                         </span>
                       </div>
-                      <p className="tabular-nums mt-1 text-xs text-[#515F73]">
+                      <p className="tabular-nums mt-1 text-xs text-dilute-ink">
                         {formatShortDateTime(res.startTime)} → {formatShortDateTime(res.endTime)} ·{' '}
                         {getStationName(res.pickupStationId)}
                         {res.returnStationId ? ` → ${getStationName(res.returnStationId)}` : ''}
@@ -341,18 +341,18 @@ export function MyRidesPage({
                     <div className="text-left sm:text-right">
                       {isCancelled ? (
                         <>
-                          <p className="tabular-nums text-xs text-[#8C97A8] line-through">
+                          <p className="tabular-nums text-xs text-dilute-ink line-through">
                             {formatMkd(res.totalPriceMkd)}
                           </p>
-                          <p className="text-[11px] font-medium text-[#515F73]">0 MKD charged</p>
+                          <p className="text-[11px] font-medium text-dilute-ink">0 MKD charged</p>
                         </>
                       ) : (
                         <>
-                          <p className="tabular-nums text-sm font-semibold text-[#0A1A33]">
+                          <p className="tabular-nums text-sm font-semibold text-indigo-depth">
                             {formatMkd(res.totalPriceMkd + res.latePenaltyMkd)}
                           </p>
                           {res.latePenaltyMkd > 0 && (
-                            <p className="tabular-nums text-[11px] text-[#991B1B]">
+                            <p className="tabular-nums text-[11px] text-status-danger-text">
                               Includes {formatMkd(res.latePenaltyMkd)} late penalty
                             </p>
                           )}

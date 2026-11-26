@@ -7,14 +7,49 @@
 @import "@fontsource/manrope/500.css";
 @import "@fontsource/manrope/600.css";
 
+@theme {
+  --color-indigo-depth: #0A1A33;
+  --color-ink-current: #1E2D4A;
+  --color-dilute-ink: #515F73;
+  --color-feathered-gray: #8C97A8;
+  --color-mist: #DDE2E8;
+  --color-paper-white: #F6F7F9;
+  --color-surface-pure: #FFFFFF;
+  --color-basin-tint: #C4D2E8;
+  --color-basin-soft: #DCE6F5;
+
+  --color-status-ok-bg: #ECFDF5;
+  --color-status-ok-border: #A7F3D0;
+  --color-status-ok-text: #065F46;
+  --color-status-ok-dot: #10B981;
+
+  --color-status-warn-bg: #FFFBEB;
+  --color-status-warn-border: #FDE68A;
+  --color-status-warn-text: #92400E;
+
+  --color-status-danger-bg: #FEF2F2;
+  --color-status-danger-border: #FECACA;
+  --color-status-danger-text: #991B1B;
+  --color-status-danger-deep: #822020;
+  --color-status-danger-hover: #6B1A1A;
+  --color-status-danger-dot: #EF4444;
+
+  --color-status-neutral-bg: #F1F5F9;
+  --color-status-neutral-border: #CBD5E1;
+  --color-status-neutral-text: #334155;
+
+  --font-display: "Raleway", "Manrope", sans-serif;
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 :root {
-  --indigo-depth: #0A1A33;
-  --ink-current: #1E2D4A;
-  --dilute-ink: #515F73;
-  --feathered-gray: #8C97A8;
-  --mist: #DDE2E8;
-  --paper-white: #F6F7F9;
-  --surface-pure: #FFFFFF;
+  --indigo-depth: var(--color-indigo-depth);
+  --ink-current: var(--color-ink-current);
+  --dilute-ink: var(--color-dilute-ink);
+  --feathered-gray: var(--color-feathered-gray);
+  --mist: var(--color-mist);
+  --paper-white: var(--color-paper-white);
+  --surface-pure: var(--color-surface-pure);
 }
 
 @layer base {
@@ -47,8 +82,8 @@
   }
 
   ::selection {
-    background-color: #0A1A33;
-    color: #F6F7F9;
+    background-color: var(--color-indigo-depth);
+    color: var(--color-paper-white);
   }
 
   :focus-visible {
@@ -149,7 +184,7 @@
   .rydio-modal-enter,
   .rydio-drawer-enter,
   .rydio-toast-enter {
-    animation: none;
+    animation: rydio-backdrop-in 120ms ease-out both;
   }
 }
 

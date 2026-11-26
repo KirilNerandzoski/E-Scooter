@@ -8,6 +8,7 @@ interface AdminReservationsSectionProps {
   reservations: Reservation[];
   vehicles: Vehicle[];
   stations: Station[];
+  initialStatusFilter?: ReservationStatus | 'ALL';
   canDeleteReservations: boolean;
   onRequestConfirm: (confirm: PendingConfirm) => void;
   onAdminSetReservationStatus: (
@@ -20,13 +21,13 @@ interface AdminReservationsSectionProps {
 function statusBadgeClass(status: ReservationStatus) {
   switch (status) {
     case 'Active':
-      return 'border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]';
+      return 'border-status-ok-border bg-status-ok-bg text-status-ok-text';
     case 'Reserved':
-      return 'border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]';
+      return 'border-status-warn-border bg-status-warn-bg text-status-warn-text';
     case 'Cancelled':
-      return 'border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]';
+      return 'border-status-danger-border bg-status-danger-bg text-status-danger-text';
     default:
-      return 'border-[#CBD5E1] bg-[#F1F5F9] text-[#334155]';
+      return 'border-status-neutral-border bg-status-neutral-bg text-status-neutral-text';
   }
 }
 
@@ -34,12 +35,15 @@ export function AdminReservationsSection({
   reservations,
   vehicles,
   stations,
+  initialStatusFilter = 'ALL',
   canDeleteReservations,
   onRequestConfirm,
   onAdminSetReservationStatus,
   onDeleteReservation,
 }: AdminReservationsSectionProps) {
-  const [resStatusFilter, setResStatusFilter] = useState<ReservationStatus | 'ALL'>('ALL');
+  const [resStatusFilter, setResStatusFilter] = useState<ReservationStatus | 'ALL'>(
+    initialStatusFilter
+  );
   const [resStationFilter, setResStationFilter] = useState<string>('ALL');
   const [resFromDate, setResFromDate] = useState<string>('');
   const [resToDate, setResToDate] = useState<string>('');
@@ -117,11 +121,11 @@ export function AdminReservationsSection({
   return (
     <div className="mt-6 space-y-5 sm:mt-8">
       {/* Labeled Filter Bar */}
-      <div className="grid gap-3 rounded-lg border border-[#DDE2E8] bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 rounded-lg border border-mist bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
         <div>
           <label
             htmlFor="res-filter-search"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             SEARCH
           </label>
@@ -131,13 +135,13 @@ export function AdminReservationsSection({
             placeholder="ID, rider, vehicle..."
             value={resSearch}
             onChange={(e) => setResSearch(e.target.value)}
-            className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           />
         </div>
         <div>
           <label
             htmlFor="res-filter-status"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             STATUS
           </label>
@@ -145,7 +149,7 @@ export function AdminReservationsSection({
             id="res-filter-status"
             value={resStatusFilter}
             onChange={(e) => setResStatusFilter(e.target.value as ReservationStatus | 'ALL')}
-            className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           >
             <option value="ALL">All Statuses</option>
             <option value="Reserved">Reserved</option>
@@ -157,7 +161,7 @@ export function AdminReservationsSection({
         <div>
           <label
             htmlFor="res-filter-station"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             STATION
           </label>
@@ -165,7 +169,7 @@ export function AdminReservationsSection({
             id="res-filter-station"
             value={resStationFilter}
             onChange={(e) => setResStationFilter(e.target.value)}
-            className="min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           >
             <option value="ALL">All Stations</option>
             {stations.map((s) => (
@@ -178,7 +182,7 @@ export function AdminReservationsSection({
         <div>
           <label
             htmlFor="res-filter-from"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             FROM DATE
           </label>
@@ -187,13 +191,13 @@ export function AdminReservationsSection({
             type="date"
             value={resFromDate}
             onChange={(e) => setResFromDate(e.target.value)}
-            className="tabular-nums min-h-[42px] w-full rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+            className="tabular-nums min-h-[42px] w-full rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
           />
         </div>
         <div>
           <label
             htmlFor="res-filter-to"
-            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-[#515F73]"
+            className="mb-1 block text-[11px] font-medium tracking-[0.12em] text-dilute-ink"
           >
             TO DATE
           </label>
@@ -203,7 +207,7 @@ export function AdminReservationsSection({
               type="date"
               value={resToDate}
               onChange={(e) => setResToDate(e.target.value)}
-              className="tabular-nums min-h-[42px] min-w-0 flex-1 rounded border border-[#DDE2E8] bg-[#F6F7F9] px-3 py-2 text-sm text-[#0A1A33]"
+              className="tabular-nums min-h-[42px] min-w-0 flex-1 rounded border border-mist bg-paper-white px-3 py-2 text-sm text-indigo-depth"
             />
             {hasActiveFilter && (
               <button
@@ -215,7 +219,7 @@ export function AdminReservationsSection({
                   setResFromDate('');
                   setResToDate('');
                 }}
-                className="min-h-[42px] shrink-0 rounded border border-[#DDE2E8] bg-white px-3 py-2 text-xs font-medium text-[#515F73] hover:border-[#0A1A33] hover:text-[#0A1A33]"
+                className="min-h-[42px] shrink-0 rounded border border-mist bg-white px-3 py-2 text-xs font-medium text-dilute-ink hover:border-indigo-depth hover:text-indigo-depth"
               >
                 Clear
               </button>
@@ -227,16 +231,16 @@ export function AdminReservationsSection({
       {/* Mobile & Tablet Stacked Cards (< xl) */}
       <div className="space-y-3 xl:hidden">
         {filteredReservations.length === 0 ? (
-          <div className="rounded-lg border border-[#DDE2E8] bg-white p-8 text-center text-sm text-[#515F73]">
+          <div className="rounded-lg border border-mist bg-white p-8 text-center text-sm text-dilute-ink">
             No reservations match the current filters.
           </div>
         ) : (
           filteredReservations.map((r) => {
             const isBusy = busyResId === r.id;
             return (
-              <div key={r.id} className="rounded-lg border border-[#DDE2E8] bg-white p-4">
+              <div key={r.id} className="rounded-lg border border-mist bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="tabular-nums text-xs font-semibold text-[#0A1A33]">{r.id}</span>
+                  <span className="tabular-nums text-xs font-semibold text-indigo-depth">{r.id}</span>
                   <span
                     className={`rounded border px-2 py-0.5 text-[10px] font-medium tracking-[0.1em] ${statusBadgeClass(r.status)}`}
                   >
@@ -246,25 +250,25 @@ export function AdminReservationsSection({
 
                 <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
                   <div>
-                    <p className="font-display text-lg font-medium text-[#0A1A33]">
+                    <p className="font-display text-lg font-medium text-indigo-depth">
                       {resolveVehicleLabel(r)}
                     </p>
-                    <p className="text-xs text-[#515F73]">
+                    <p className="text-xs text-dilute-ink">
                       {r.customerName} · {r.customerEmail}
                     </p>
                   </div>
                   <div className="text-right">
                     {r.status === 'Cancelled' ? (
-                      <span className="tabular-nums text-xs text-[#8C97A8] line-through">
+                      <span className="tabular-nums text-xs text-dilute-ink line-through">
                         {formatMkd(r.totalPriceMkd)}
                       </span>
                     ) : (
                       <>
-                        <p className="tabular-nums text-sm font-semibold text-[#0A1A33]">
+                        <p className="tabular-nums text-sm font-semibold text-indigo-depth">
                           {formatMkd(r.totalPriceMkd + r.latePenaltyMkd)}
                         </p>
                         {r.latePenaltyMkd > 0 && (
-                          <p className="tabular-nums text-[11px] text-[#991B1B]">
+                          <p className="tabular-nums text-[11px] text-status-danger-text">
                             +{formatMkd(r.latePenaltyMkd)} late
                           </p>
                         )}
@@ -273,18 +277,18 @@ export function AdminReservationsSection({
                   </div>
                 </div>
 
-                <p className="tabular-nums mt-2 text-xs text-[#515F73]">
+                <p className="tabular-nums mt-2 text-xs text-dilute-ink">
                   {formatShortDateTime(r.startTime)} → {formatShortDateTime(r.endTime)}
                 </p>
 
                 {(r.status === 'Reserved' || r.status === 'Active' || canDeleteReservations) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#DDE2E8] pt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-mist pt-3">
                     {r.status === 'Reserved' && (
                       <button
                         type="button"
                         disabled={isBusy}
                         onClick={() => void runStatusUpdate(r.id, 'Active')}
-                        className="inline-flex min-h-[36px] items-center gap-1 rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-45"
+                        className="inline-flex min-h-[36px] items-center gap-1 rounded border border-mist bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-depth disabled:opacity-45"
                       >
                         {isBusy ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -300,7 +304,7 @@ export function AdminReservationsSection({
                           type="button"
                           disabled={isBusy}
                           onClick={() => void runStatusUpdate(r.id, 'Completed')}
-                          className="inline-flex min-h-[36px] items-center gap-1 rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-xs font-medium text-[#0A1A33] disabled:opacity-45"
+                          className="inline-flex min-h-[36px] items-center gap-1 rounded border border-mist bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-depth disabled:opacity-45"
                         >
                           <Check className="h-3 w-3" />
                           Complete
@@ -316,7 +320,7 @@ export function AdminReservationsSection({
                               action: () => onAdminSetReservationStatus(r.id, 'Cancelled'),
                             })
                           }
-                          className="inline-flex min-h-[36px] items-center gap-1 rounded border border-[#DDE2E8] bg-white px-2.5 py-1.5 text-xs font-medium text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-45"
+                          className="inline-flex min-h-[36px] items-center gap-1 rounded border border-mist bg-white px-2.5 py-1.5 text-xs font-medium text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:opacity-45"
                         >
                           <Ban className="h-3 w-3" />
                           Cancel
@@ -337,7 +341,7 @@ export function AdminReservationsSection({
                             action: () => onDeleteReservation(r.id),
                           })
                         }
-                        className="ml-auto inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded border border-[#DDE2E8] bg-white p-2 text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-45"
+                        className="ml-auto inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded border border-mist bg-white p-2 text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:opacity-45"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -351,9 +355,9 @@ export function AdminReservationsSection({
       </div>
 
       {/* Desktop Table (xl+) */}
-      <div className="hidden overflow-x-auto rounded-lg border border-[#DDE2E8] bg-white xl:block">
+      <div className="hidden overflow-x-auto rounded-lg border border-mist bg-white xl:block">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-[#DDE2E8] bg-[#F6F7F9] text-[11px] font-medium tracking-[0.12em] text-[#515F73]">
+          <thead className="border-b border-mist bg-paper-white text-[11px] font-medium tracking-[0.12em] text-dilute-ink">
             <tr>
               <th className="px-4 py-3">BOOKING</th>
               <th className="px-4 py-3">CUSTOMER</th>
@@ -364,10 +368,10 @@ export function AdminReservationsSection({
               <th className="px-4 py-3 text-right">CONTROLS</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#DDE2E8]">
+          <tbody className="divide-y divide-mist">
             {filteredReservations.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-[#515F73]">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-dilute-ink">
                   No reservations match the current filters.
                 </td>
               </tr>
@@ -375,16 +379,16 @@ export function AdminReservationsSection({
               filteredReservations.map((r) => {
                 const isBusy = busyResId === r.id;
                 return (
-                  <tr key={r.id} className="hover:bg-[#F6F7F9]/60">
-                    <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs font-medium text-[#0A1A33]">
+                  <tr key={r.id} className="hover:bg-paper-white/60">
+                    <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs font-medium text-indigo-depth">
                       {r.id}
                     </td>
                     <td className="px-4 py-3.5">
-                      <p className="text-xs font-medium text-[#0A1A33]">{r.customerName}</p>
-                      <p className="text-[11px] text-[#515F73]">{r.customerEmail}</p>
+                      <p className="text-xs font-medium text-indigo-depth">{r.customerName}</p>
+                      <p className="text-[11px] text-dilute-ink">{r.customerEmail}</p>
                     </td>
-                    <td className="px-4 py-3.5 text-xs text-[#0A1A33]">{resolveVehicleLabel(r)}</td>
-                    <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs text-[#515F73]">
+                    <td className="px-4 py-3.5 text-xs text-indigo-depth">{resolveVehicleLabel(r)}</td>
+                    <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-xs text-dilute-ink">
                       {formatShortDateTime(r.startTime)} → {formatShortDateTime(r.endTime)}
                     </td>
                     <td className="px-4 py-3.5">
@@ -394,16 +398,16 @@ export function AdminReservationsSection({
                         {r.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-right text-xs font-semibold text-[#0A1A33]">
+                    <td className="tabular-nums whitespace-nowrap px-4 py-3.5 text-right text-xs font-semibold text-indigo-depth">
                       {r.status === 'Cancelled' ? (
-                        <span className="font-normal text-[#8C97A8] line-through">
+                        <span className="font-normal text-dilute-ink line-through">
                           {formatMkd(r.totalPriceMkd)}
                         </span>
                       ) : (
                         <>
                           {formatMkd(r.totalPriceMkd + r.latePenaltyMkd)}
                           {r.latePenaltyMkd > 0 && (
-                            <span className="block text-[11px] font-normal text-[#991B1B]">
+                            <span className="block text-[11px] font-normal text-status-danger-text">
                               +{formatMkd(r.latePenaltyMkd)} late
                             </span>
                           )}
@@ -419,7 +423,7 @@ export function AdminReservationsSection({
                             aria-label={`Mark reservation ${r.id} active`}
                             title="Mark Active"
                             onClick={() => void runStatusUpdate(r.id, 'Active')}
-                            className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#0A1A33] hover:border-[#0A1A33] disabled:opacity-45"
+                            className="rounded border border-mist bg-white p-1.5 text-indigo-depth hover:border-indigo-depth disabled:opacity-45"
                           >
                             {isBusy ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -436,7 +440,7 @@ export function AdminReservationsSection({
                               aria-label={`Complete reservation ${r.id}`}
                               title="Complete"
                               onClick={() => void runStatusUpdate(r.id, 'Completed')}
-                              className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#0A1A33] hover:border-[#0A1A33] disabled:opacity-45"
+                              className="rounded border border-mist bg-white p-1.5 text-indigo-depth hover:border-indigo-depth disabled:opacity-45"
                             >
                               <Check className="h-3.5 w-3.5" />
                             </button>
@@ -453,7 +457,7 @@ export function AdminReservationsSection({
                                   action: () => onAdminSetReservationStatus(r.id, 'Cancelled'),
                                 })
                               }
-                              className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-45"
+                              className="rounded border border-mist bg-white p-1.5 text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:opacity-45"
                             >
                               <Ban className="h-3.5 w-3.5" />
                             </button>
@@ -474,7 +478,7 @@ export function AdminReservationsSection({
                                 action: () => onDeleteReservation(r.id),
                               })
                             }
-                            className="rounded border border-[#DDE2E8] bg-white p-1.5 text-[#515F73] hover:border-[#822020] hover:text-[#822020] disabled:opacity-45"
+                            className="rounded border border-mist bg-white p-1.5 text-dilute-ink hover:border-status-danger-deep hover:text-status-danger-deep disabled:opacity-45"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
